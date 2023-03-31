@@ -1,0 +1,44 @@
+<TMPL_LOOP NAME=tcpudp><Services transactionid="">
+    <Name><TMPL_VAR NAME=name></Name>
+    <Type><TMPL_VAR NAME=type></Type>
+    <ServiceDetails>
+        <TMPL_LOOP NAME=details><ServiceDetail>
+            <SourcePort><TMPL_VAR name=port_src></SourcePort>
+            <DestinationPort><TMPL_VAR name=port_dst></DestinationPort>
+            <Protocol><TMPL_VAR name=protocol></Protocol>
+        </ServiceDetail></TMPL_LOOP>
+    </ServiceDetails>
+</Services>
+</TMPL_LOOP>
+<TMPL_LOOP NAME=ip><Services transactionid="">
+    <Name><TMPL_VAR NAME=name></Name>
+    <Type><TMPL_VAR NAME=type></Type>
+    <ServiceDetails>
+        <ServiceDetail>
+            <ProtocolName><TMPL_VAR name=protocol_name></ProtocolName>
+        </ServiceDetail>
+    </ServiceDetails>
+</Services>
+</TMPL_LOOP>
+<TMPL_LOOP NAME=icmp><Services transactionid="">
+    <Name><TMPL_VAR NAME=name></Name>
+    <Type><TMPL_VAR NAME=type></Type>
+    <ServiceDetails>
+        <ServiceDetail>
+            <ICMPType><TMPL_VAR name=icmp_type></ICMPType>
+            <ICMPCode><TMPL_VAR name=icmp_code></ICMPCode>
+        </ServiceDetail>
+    </ServiceDetails>
+</Services>
+</TMPL_LOOP>
+<TMPL_LOOP NAME=icmpv6><Services transactionid="">
+    <Name><TMPL_VAR NAME=name></Name>
+    <Type><TMPL_VAR NAME=type></Type>
+    <ServiceDetails>
+        <ServiceDetail>
+            <ICMPv6Type><TMPL_VAR name=icmp_type></ICMPv6Type>
+            <ICMPv6Code><TMPL_VAR name=icmp_code></ICMPv6Code>
+        </ServiceDetail>
+    </ServiceDetails>
+</Services>
+</TMPL_LOOP>

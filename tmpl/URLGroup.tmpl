@@ -1,0 +1,9 @@
+<TMPL_LOOP NAME=urlgroups><WebFilterURLGroup transactionid="">
+    <Name>UTM <TMPL_VAR NAME=type> list: <TMPL_VAR NAME=trunc_name></Name>
+    <Description>Imported <TMPL_VAR NAME=type> URLs from UTM - <TMPL_VAR NAME=name></Description>
+    <IsDefault>No</IsDefault>
+    <URLlist><TMPL_LOOP NAME=urls>
+        <URL><TMPL_VAR NAME=url></URL></TMPL_LOOP>
+    </URLlist>
+</WebFilterURLGroup>
+</TMPL_LOOP>
