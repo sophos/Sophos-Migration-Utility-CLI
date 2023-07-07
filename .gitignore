@@ -3,3 +3,6 @@ t/*
 *.tar
 Entities.xml
 Makefile
+lib/SMU/*
+out/
+cover_db/
