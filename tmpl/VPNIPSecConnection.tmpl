@@ -1,0 +1,39 @@
+<TMPL_LOOP NAME="ipsec"><VPNIPSecConnection transactionid="">
+    <Configuration>
+      <Name><TMPL_VAR NAME="name"></Name>
+      <Description><TMPL_VAR NAME="description"></Description>
+      <ConnectionType><TMPL_VAR NAME="type"></ConnectionType>
+      <Policy><TMPL_VAR NAME="policy"></Policy>
+      <ActionOnVPNRestart>RespondOnly</ActionOnVPNRestart>
+      <AuthenticationType><TMPL_VAR NAME="auth_type"></AuthenticationType>
+      <SubnetFamily>IPv4</SubnetFamily>
+      <EndpointFamily>IPv4</EndpointFamily>
+      <LocalWANPort><TMPL_VAR NAME="local_gateway"></LocalWANPort>
+      <AliasLocalWANPort><TMPL_VAR NAME="local_address"></AliasLocalWANPort>
+      <RemoteHost><TMPL_VAR NAME="remote_host"></RemoteHost>
+      <NATedLAN/>
+      <LocalIDType><TMPL_VAR NAME="local_id_type"></LocalIDType>
+      <LocalID><TMPL_VAR NAME="local_id"></LocalID>
+      <RemoteNetwork>
+        <TMPL_LOOP name="remote_networks"><Network><TMPL_VAR name="name"></Network></TMPL_LOOP>
+      </RemoteNetwork>
+      <RemoteIDType><TMPL_VAR NAME="remote_id_type"></RemoteIDType>
+      <RemoteID><TMPL_VAR NAME="remote_id"></RemoteID>
+      <UserAuthenticationMode>Disable</UserAuthenticationMode>
+      <AllowedUser>
+        <User/>
+      </AllowedUser>
+      <Protocol>ALL</Protocol>
+      <LocalPort/>
+      <RemotePort/>
+      <DisconnectOnIdleInterval/>
+      <Status><TMPL_VAR NAME="status"></Status>
+      <TMPL_IF NAME="preshared_key"><PresharedKey><TMPL_VAR NAME="preshared_key"></PresharedKey></TMPL_IF>
+      <TMPL_IF NAME="pubkey"><RemoteRSAKey><TMPL_VAR NAME="pubkey"></RemoteRSAKey></TMPL_IF>
+      <TMPL_IF NAME="certificate"><DigitalCertificate><TMPL_VAR NAME="certificate" ESCAPE="HTML"></DigitalCertificate></TMPL_IF>
+      <Username/>
+      <Password/>
+      <TMPL_LOOP NAME="local_subnets"><LocalSubnet><TMPL_VAR NAME="name"></LocalSubnet></TMPL_LOOP>
+    </Configuration>
+  </VPNIPSecConnection>
+  </TMPL_LOOP>

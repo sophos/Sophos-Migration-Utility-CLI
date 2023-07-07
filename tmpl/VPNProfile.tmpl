@@ -1,0 +1,39 @@
+<TMPL_LOOP NAME="profile"><VPNProfile transactionid="">
+  <Name><TMPL_VAR NAME="name"></Name>
+  <Description><TMPL_VAR NAME="description"></Description>
+  <KeyingMethod>Automatic</KeyingMethod>
+  <AllowReKeying>Enable</AllowReKeying>
+  <KeyNegotiationTries>5</KeyNegotiationTries>
+  <AuthenticationMode>MainMode</AuthenticationMode>
+  <PassDataInCompressedFormat>Disable</PassDataInCompressedFormat>
+  <Phase1>
+    <EncryptionAlgorithm1><TMPL_VAR NAME="phase1_encr1"></EncryptionAlgorithm1>
+    <AuthenticationAlgorithm1><TMPL_VAR NAME="phase1_auth1"></AuthenticationAlgorithm1>
+    <EncryptionAlgorithm2><TMPL_VAR NAME="phase1_encr2"></EncryptionAlgorithm2>
+    <AuthenticationAlgorithm2><TMPL_VAR NAME="phase1_auth2"></AuthenticationAlgorithm2>
+    <EncryptionAlgorithm3><TMPL_VAR NAME="phase1_encr3"></EncryptionAlgorithm3>
+    <AuthenticationAlgorithm3><TMPL_VAR NAME="phase1_auth3"></AuthenticationAlgorithm3>
+    <SupportedDHGroups>
+      <TMPL_LOOP NAME="phase1_dh_groups"><DHGroup><TMPL_VAR NAME="name"></DHGroup></TMPL_LOOP>
+    </SupportedDHGroups>
+    <KeyLife><TMPL_VAR NAME="phase1_key_life"></KeyLife>
+    <ReKeyMargin>90 </ReKeyMargin>
+    <RandomizeRe-KeyingMarginBy>100</RandomizeRe-KeyingMarginBy>
+    <DeadPeerDetection>Enable</DeadPeerDetection>
+    <CheckPeerAfterEvery>30</CheckPeerAfterEvery>
+    <WaitForResponseUpto>120</WaitForResponseUpto>
+    <ActionWhenPeerUnreachable><TMPL_VAR NAME="action_when_unreachable"></ActionWhenPeerUnreachable>
+  </Phase1>
+  <Phase2>
+    <EncryptionAlgorithm1><TMPL_VAR NAME="phase2_encr1"></EncryptionAlgorithm1>
+    <AuthenticationAlgorithm1><TMPL_VAR NAME="phase2_auth1"></AuthenticationAlgorithm1>
+    <EncryptionAlgorithm2><TMPL_VAR NAME="phase2_encr2"></EncryptionAlgorithm2>
+    <AuthenticationAlgorithm2><TMPL_VAR NAME="phase2_auth2"></AuthenticationAlgorithm2>
+    <EncryptionAlgorithm3><TMPL_VAR NAME="phase2_encr3"></EncryptionAlgorithm3>
+    <AuthenticationAlgorithm3><TMPL_VAR NAME="phase2_auth3"></AuthenticationAlgorithm3>
+    <PFSGroup><TMPL_VAR NAME="phase2_pfs_group"></PFSGroup>
+    <KeyLife><TMPL_VAR NAME="phase2_key_life"></KeyLife>
+  </Phase2>
+  <sha2_96_truncate>no</sha2_96_truncate>
+  <keyexchange>ikev2</keyexchange>
+</VPNProfile></TMPL_LOOP>

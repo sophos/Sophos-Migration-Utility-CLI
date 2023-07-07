@@ -1,43 +1,43 @@
-<TMPL_LOOP NAME=ips><IPHost transactionid="">
-    <Name><TMPL_VAR NAME=name></Name>
-    <IPFamily><TMPL_VAR NAME=family></IPFamily>
-    <IPAddress><TMPL_VAR NAME=address></IPAddress>
+<TMPL_LOOP NAME="ips"><IPHost transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
+    <IPFamily><TMPL_VAR NAME="family"></IPFamily>
+    <IPAddress><TMPL_VAR NAME="address"></IPAddress>
     <HostType>IP</HostType>
 </IPHost>
 </TMPL_LOOP>
-<TMPL_LOOP NAME=ranges><IPHost transactionid="">
-    <Name><TMPL_VAR NAME=name></Name>
-    <IPFamily><TMPL_VAR NAME=family></IPFamily>
-    <StartIPAddress><TMPL_VAR NAME=start_address></StartIPAddress>
-    <EndIPAddress><TMPL_VAR NAME=end_address></EndIPAddress>
+<TMPL_LOOP NAME="ranges"><IPHost transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
+    <IPFamily><TMPL_VAR NAME="family"></IPFamily>
+    <StartIPAddress><TMPL_VAR NAME="start_address"></StartIPAddress>
+    <EndIPAddress><TMPL_VAR NAME="end_address"></EndIPAddress>
     <HostType>IPRange</HostType>
 </IPHost>
 </TMPL_LOOP>
-<TMPL_LOOP NAME=iplists><IPHost transactionid="">
-    <Name><TMPL_VAR NAME=name></Name>
-    <IPFamily><TMPL_VAR NAME=family></IPFamily>
-    <ListOfIPAddresses><TMPL_VAR NAME=addresses></ListOfIPAddresses>
+<TMPL_LOOP NAME="iplists"><IPHost transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
+    <IPFamily><TMPL_VAR NAME="family"></IPFamily>
+    <ListOfIPAddresses><TMPL_VAR NAME="addresses"></ListOfIPAddresses>
     <HostType>IPList</HostType>
 </IPHost>
 </TMPL_LOOP>
-<TMPL_LOOP NAME=maclists><MACHost transactionid="">
-    <Name><TMPL_VAR NAME=name></Name>
+<TMPL_LOOP NAME="maclists"><MACHost transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
     <Type>MACLIST</Type>
-    <MACList><TMPL_LOOP NAME=macs>
-        <MACAddress><TMPL_VAR NAME=mac></MACAddress></TMPL_LOOP>
+    <MACList><TMPL_LOOP NAME="macs">
+        <MACAddress><TMPL_VAR NAME="mac"></MACAddress></TMPL_LOOP>
     </MACList>
 </MACHost>
 </TMPL_LOOP>
-<TMPL_LOOP NAME=networks><IPHost transactionid="">
-    <Name><TMPL_VAR NAME=name></Name>
-    <IPFamily><TMPL_VAR NAME=family></IPFamily>
-    <IPAddress><TMPL_VAR NAME=address></IPAddress>
-    <Subnet><TMPL_VAR NAME=subnet></Subnet>
+<TMPL_LOOP NAME="networks"><IPHost transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
+    <IPFamily><TMPL_VAR NAME="family"></IPFamily>
+    <IPAddress><TMPL_VAR NAME="address"></IPAddress>
+    <Subnet><TMPL_VAR NAME="subnet"></Subnet>
     <HostType>Network</HostType>
 </IPHost>
 </TMPL_LOOP>
-<TMPL_LOOP NAME=fqdns><FQDNHost transactionid="">
-    <Name><TMPL_VAR NAME=name></Name>
-    <FQDN><TMPL_VAR NAME=address></FQDN>
+<TMPL_LOOP NAME="fqdns"><FQDNHost transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
+    <FQDN><TMPL_VAR NAME="address"></FQDN>
 </FQDNHost>
 </TMPL_LOOP>

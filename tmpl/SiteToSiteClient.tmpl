@@ -1,0 +1,29 @@
+<TMPL_LOOP NAME="clients">
+<SiteToSiteClient>
+    <Name><TMPL_VAR NAME="name"></Name>
+    <ServerConfigurationFile><TMPL_VAR NAME="config_filename"></ServerConfigurationFile>
+    <FilePassword><TMPL_VAR NAME="config_password"></FilePassword>
+<TMPL_IF NAME="http_proxy_server_enabled">
+    <HttpProxyServer>Enable</HttpProxyServer>
+    <ProxyServer><TMPL_VAR NAME="http_proxy_server_name"></ProxyServer>
+    <ProxyPort><TMPL_VAR NAME="http_proxy_server_port"></ProxyPort>
+<TMPL_ELSE>
+    <HttpProxyServer>Disable</HttpProxyServer>
+</TMPL_IF>
+<TMPL_IF NAME="http_proxy_server_auth_enabled">
+    <ProxyAuthentication>Enable</ProxyAuthentication>
+        <Username><TMPL_VAR NAME="http_proxy_server_username"></Username>
+        <Password><TMPL_VAR NAME="http_proxy_server_password"></Password>
+<TMPL_ELSE>
+    <ProxyAuthentication>Disable</ProxyAuthentication>
+</TMPL_IF>
+<TMPL_IF NAME="peerhost_enabled">
+    <PeerHost>Enable</PeerHost>
+    <HostName><TMPL_VAR NAME="peerhost_name"></HostName>
+<TMPL_ELSE>
+    <PeerHost>Disable</PeerHost>
+</TMPL_IF>
+    <Description>text</Description>
+    <Status><TMPL_VAR NAME="status"></Status>
+</SiteToSiteClient>
+</TMPL_LOOP>

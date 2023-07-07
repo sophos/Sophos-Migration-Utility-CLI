@@ -1,0 +1,12 @@
+<TMPL_LOOP NAME="servers"><SiteToSiteServer transactionid="">
+  <Name><TMPL_VAR NAME="name"></Name>
+  <StaticIP>Disable</StaticIP>
+  <LocalNetworks>
+    <TMPL_LOOP NAME="local_networks"><Network><TMPL_VAR NAME="name"></Network></TMPL_LOOP>
+  </LocalNetworks>
+  <RemoteNetworks>
+    <TMPL_LOOP NAME="remote_networks"><Network><TMPL_VAR NAME="name"></Network></TMPL_LOOP>
+  </RemoteNetworks>
+  <Description/>
+  <Status>On</Status>
+</SiteToSiteServer></TMPL_LOOP>

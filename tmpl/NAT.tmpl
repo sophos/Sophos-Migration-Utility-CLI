@@ -11,19 +11,19 @@
     <TranslatedSource>MASQ</TranslatedSource>
 </NATRule>
 
-<TMPL_LOOP NAME=nat>
+<TMPL_LOOP NAME="nat">
     <NATRule transactionid="">
-        <Name><TMPL_VAR NAME=name></Name>
-        <Description><TMPL_VAR NAME=description></Description>
+        <Name><TMPL_VAR NAME="name"></Name>
+        <Description><TMPL_VAR NAME="description"></Description>
         <IPFamily>IPv4</IPFamily>
-        <Status><TMPL_VAR NAME=status></Status>
+        <Status><TMPL_VAR NAME="status"></Status>
         <LinkedFirewallrule>None</LinkedFirewallrule>
         <OriginalServices>
-            <Service><TMPL_VAR NAME=orig_service></Service>
+            <Service><TMPL_VAR NAME="orig_service"></Service>
         </OriginalServices>
-        <TranslatedService><TMPL_VAR NAME=trans_service></TranslatedService>
+        <TranslatedService><TMPL_VAR NAME="trans_service"></TranslatedService>
         <TranslatedSource>Original</TranslatedSource>
-        <TranslatedDestination><TMPL_VAR NAME=trans_dest></TranslatedDestination>
+        <TranslatedDestination><TMPL_VAR NAME="trans_dest"></TranslatedDestination>
         <OverrideInterfaceNATPolicy>Disable</OverrideInterfaceNATPolicy>
         <NATMethod>0</NATMethod>
         <HealthCheck>Disable</HealthCheck>
