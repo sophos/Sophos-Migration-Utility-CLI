@@ -105,13 +105,14 @@ If you need assistance with migration, you can do as follows:
 3. DNS Groups -> IPLists is disabled - See DNSGrouptoIPLIST in sub parse_hosts() to re-enable
 4. Gateway hosts -> Gateways only supports IPv4 (SFOS restriction)
 
-5. SFOS validates the VPN connections more strictly than UTM.  Because of this, some configurations that are valid in UTM will be silently rejected by SFOS.  
+5. SFOS validates the VPN connections more strictly than UTM.  Because of this, some configurations that are valid in UTM will be silently rejected by SFOS.
 It is not feasible to reimplement all the SFOS validation rules, so this tool will only detect a limited number of issues that may cause problems, as mentioned below.  Please be advised there may be more situations that will cause SFOS to reject the settings.
 
     - Pre-shared key length must be at least 5 characters
     - VPN connections must have well defined networks - can't use "Any" as network definitions
 
 6. This version will import the local ID (usually a hostname) from UTM into SFOS.
+7. Users and groups are not imported.  For VPN definitions, they have to be added manually.
 
 # Supported exports:
    - Web Filter Action Allow and Block lists -> URL Groups
@@ -125,10 +126,10 @@ It is not feasible to reimplement all the SFOS validation rules, so this tool wi
    - IP Ranges -> IP Host Ranges (IPv4 and IPv6)
    - DNS Group hostname -> FQDNHost
    - Gateway Hosts -> Gateways (IPv4)
-   - VPN Settings - site-to-site only
+   - VPN Settings - site-to-site
+   - VPN Settings - SSL VPN remote access
 
 # Unsupported exports to be considered:
-   - VPN Settings - remote access
    - Routes
    - VLANs
    - Firewall rules

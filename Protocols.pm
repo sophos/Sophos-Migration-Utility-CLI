@@ -114,3 +114,5 @@ our $ICMP6 = {
 	153 => { name => "Multicast Router Termination" },
 	154 => { name => "FMIPv6 Messages" }
 };
+
+1;

@@ -1,4 +1,4 @@
-<TMPL_LOOP NAME="ipsec"><VPNIPSecConnection transactionid="">
+<VPNIPSecConnection transactionid="">
     <Configuration>
       <Name><TMPL_VAR NAME="name"></Name>
       <Description><TMPL_VAR NAME="description"></Description>
@@ -36,4 +36,3 @@
       <TMPL_LOOP NAME="local_subnets"><LocalSubnet><TMPL_VAR NAME="name"></LocalSubnet></TMPL_LOOP>
     </Configuration>
   </VPNIPSecConnection>
-  </TMPL_LOOP>

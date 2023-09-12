@@ -1,0 +1,37 @@
+<SophosConnectClient transactionid="">
+  <Reset><TMPL_VAR NAME="reset"></Reset>
+  <SophosConnectClientConfiguration><TMPL_VAR NAME="status"></SophosConnectClientConfiguration>
+  <AliasInterface><TMPL_VAR NAME="interface"></AliasInterface>
+  <PolicyID>DefaultRemoteAccess</PolicyID>
+  <Interface><TMPL_VAR NAME="interface"></Interface>
+  <AuthenticationType><TMPL_VAR NAME="auth_type"></AuthenticationType>
+  <LocalIDType><TMPL_VAR NAME="local_id_type"></LocalIDType>
+  <LocalID><TMPL_VAR NAME="local_id"></LocalID>
+  <RemoteIDType><TMPL_VAR NAME="remote_id_type"></RemoteIDType>
+  <RemoteID><TMPL_VAR NAME="remote_id"></RemoteID>
+  <AllowedUsers>
+    <User>Guest Group</User>
+  </AllowedUsers>
+  <Name><TMPL_VAR NAME="name"></Name>
+  <AssignIP>
+    <StartIP><TMPL_VAR NAME="start_ip"></StartIP>
+    <EndIP><TMPL_VAR NAME="end_ip"></EndIP>
+  </AssignIP>
+  <LeaseIPFromRadiusServer>Disable</LeaseIPFromRadiusServer>
+  <DNSServer1><TMPL_VAR NAME="primary_dns"></DNSServer1>
+  <DNSServer2><TMPL_VAR NAME="secondary_dns"></DNSServer2>
+  <DisconnectOnIdleInterval>444</DisconnectOnIdleInterval>
+  <DefaultGateway>Enable</DefaultGateway>
+  <SecurityHeartbeat>Disable</SecurityHeartbeat>
+  <SaveCredential>Disable</SaveCredential>
+  <TwoFAToken>Disable</TwoFAToken>
+  <AdLogon>Disable</AdLogon>
+  <AutoConnect>Disable</AutoConnect>
+  <HostorDNSName/>
+  <AssignDNS>Disable</AssignDNS>
+  <DomainName/>
+  <PermittedNetworkResourcesIPv4><TMPL_LOOP NAME="networks">
+    <Resource><TMPL_VAR NAME="name"></Resource>
+  </TMPL_LOOP></PermittedNetworkResourcesIPv4>
+  <PresharedKey><TMPL_VAR NAME="preshared_key"></PresharedKey>
+</SophosConnectClient>

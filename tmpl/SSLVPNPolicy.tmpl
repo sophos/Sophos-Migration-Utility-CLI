@@ -1,0 +1,12 @@
+<SSLVPNPolicy transactionid="">
+  <TunnelPolicy>
+    <Name><TMPL_VAR NAME="name"></Name>
+    <Description><TMPL_VAR NAME="description"></Description>
+    <UseAsDefaultGateway><TMPL_VAR NAME="use_as_default_gw"></UseAsDefaultGateway>
+    <PermittedNetworkResourcesIPv4><TMPL_LOOP NAME="permitted_network_resources_ipv4">
+      <Resource><TMPL_VAR NAME="name"></Resource>
+    </TMPL_LOOP></PermittedNetworkResourcesIPv4>
+    <DisconnectIdleClients><TMPL_VAR NAME="disconnect_idle_clients"></DisconnectIdleClients>
+    <OverrideGlobalTimeout><TMPL_VAR NAME="override_global_timeout_minutes"></OverrideGlobalTimeout>
+  </TunnelPolicy>
+</SSLVPNPolicy>
