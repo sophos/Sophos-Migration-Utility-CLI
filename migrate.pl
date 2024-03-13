@@ -17,7 +17,7 @@ use HTML::Template;
 use Archive::Tar;
 use JSON;
 
-our $VERSION = '0.4';
+our $VERSION = '0.5';
 # Sophos Migration Utility - CLI
 # Compatible with UTM 9.7xx to SFOS 19.5.1
 #
@@ -57,7 +57,6 @@ our $VERSION = '0.4';
 #    - VPN Settings - SSL VPN remote access
 #
 ## Unsupported exports to be considered
-#   - VPN Settings - remote access
 #   - Routes
 #   - VLANs
 #   - Firewall rules
@@ -601,7 +600,7 @@ sub parse_one_ipsec_vpn_connection {
     } @{$obj->{data}->{networks}}, @{$remote_gateway->{data}->{networks}};
 
     if (@any_networks) {
-        warn "IPSec VPN connection $data->{name} can't use Any networks - found: @any_networks";
+        warn "Will not export IPSec VPN connection $data->{name}: can't use Any networks - found: @any_networks\n";
         return;
     }
 
@@ -626,7 +625,7 @@ sub parse_one_ipsec_vpn_connection {
         # TODO can we have multiple ipsec remote addresses on utm?
         status => ($data->{status} ? 'Active' : 'Inactive'),
         remote_id_type => $vpn_id_types{$remote_auth->{data}->{vpn_id_type}},
-        remote_id => $remote_auth->{data}->{vpn_id},
+        remote_id => $remote_auth->{data}->{vpn_id},  # TODO fixme for rsa and cert
         # These should contain the local interface name, but interface names are different between UTM and SFOS!
         # We will use a global default here.
         # For the future, the way to get the UTM interface is: `get_ref($backup, $data->{interface})->{data}->{name}`
@@ -634,11 +633,56 @@ sub parse_one_ipsec_vpn_connection {
         local_gateway => $DEFAULT_INTERFACE_NAME,
     };
 
-    my $confd_ipsec = $backup->{main}->{ipsec};
-    my $local_rsa = get_ref($backup, $confd_ipsec->{local_rsa});
-    $vpn->{local_id_type} = $vpn_id_types{$local_rsa->{data}->{vpn_id_type}};
-    $vpn->{local_id} = $local_rsa->{data}->{vpn_id};
+    for ($remote_auth->{type}) {
+        if ($_ eq 'psk') {
+            my $psk = $remote_auth->{data}->{psk};
+            if (length $psk < 5) {
+                warn "Will not export IPSec VPN connection $data->{name}: PSK too short - must be at least 5 characters\n";
+                return undef;
+            }
+            $vpn->{auth_type} = 'PresharedKey';
+            $vpn->{preshared_key} = $psk;
+            my $confd_ipsec_advanced = $backup->{main}->{ipsec}->{advanced};
+            $vpn->{local_id_type} = $vpn_id_types{$confd_ipsec_advanced->{psk_vpn_id_type}};
+            $vpn->{local_id} = $confd_ipsec_advanced->{psk_vpn_id};
 
+        } elsif ($_ eq 'rsa') {
+            $vpn->{auth_type} = 'RSAKey';
+            $vpn->{pubkey} = $remote_auth->{data}->{pubkey};
+            my $local_auth = get_ref($backup, $backup->{main}->{ipsec}->{local_rsa});
+            $vpn->{local_id_type} = $vpn_id_types{$local_auth->{data}->{vpn_id_type}};
+            $vpn->{local_id} = $local_auth->{data}->{vpn_id};
+
+        } elsif ($_ eq 'x509') {
+            $vpn->{auth_type} = 'DigitalCertificate';
+            my $cert;
+            if ($remote_auth->{data}->{certificate} ne '') {
+                $cert = get_ref($backup, $remote_auth->{data}->{certificate});
+                $vpn->{certificate} = $cert->{data}->{certificate};
+            }
+            if ($remote_auth->{data}->{vpn_id_type} eq 'from_certificate') {
+                my $meta = get_ref($backup, $cert->{data}->{meta});
+                $vpn->{remote_id_type} = $vpn_id_types{$meta->{data}->{vpn_id_type}};
+                $vpn->{remote_id} = $meta->{data}->{vpn_id};
+            } else {
+                $vpn->{remote_id_type} = $vpn_id_types{$remote_auth->{data}->{vpn_id_type}};
+                $vpn->{remote_id} = $remote_auth->{data}->{vpn_id};
+            }
+            my $confd_ipsec = $backup->{main}->{ipsec};
+            my $local_rsa = get_ref($backup, $confd_ipsec->{local_rsa});
+            $vpn->{local_id_type} = $vpn_id_types{$local_rsa->{data}->{vpn_id_type}};
+            $vpn->{local_id} = $local_rsa->{data}->{vpn_id};
+        }
+    }
+
+    if (not $vpn->{local_id}) {
+        warn "Will not export IPSec VPN connection $data->{name}: does not have a local ID set!\n";
+        return undef;
+    }
+    if (not $vpn->{remote_id}) {
+        warn "Will not export IPSec VPN connection $data->{name}: does not have a remote ID set!\n";
+        return undef;
+    }
     return $vpn;
 }
 
@@ -687,8 +731,8 @@ sub parse_one_ssl_vpn_server {
     } @{$obj->{data}->{local_networks}}, @{$obj->{data}->{remote_networks}};
 
     if (@any_networks) {
-        warn "SSL VPN connection $obj->{data}->{name} can't use Any networks - found: @any_networks";
-        return;
+        warn "Will not export SSL VPN connection $obj->{data}->{name}: can't use Any networks - found: @any_networks\n";
+        return undef;
     }
 
     my @local_networks = map { network_name get_ref($backup, $_) } @{$obj->{data}->{local_networks}};
@@ -987,7 +1031,9 @@ sub parse_backup {
             next if defined $requested_template and $template_name ne $requested_template;
             my $handler = $TEMPLATE_METADATA{$template_name}->{handler};
             my ($template_data, $extra_data) = $handler->($backup, $obj);
-            push @{ $entities{$template_name} }, @{ make_entities $template_name, $template_data };
+            if ($template_data) {
+                push @{ $entities{$template_name} }, @{ make_entities $template_name, $template_data };
+            }
             if ($extra_data) {
                 while (my ($filename, $content) = each %$extra_data) {
                     $extra{$template_name}->{$filename} = $content;
