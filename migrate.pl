@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-#Copyright Sophos Ltd 2023
+#Copyright Sophos Ltd 2025
 #
 #This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 2 of the License, or (at your option) any later version.
 #This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
@@ -17,9 +17,9 @@ use HTML::Template;
 use Archive::Tar;
 use JSON;
 
-our $VERSION = '0.5';
+our $VERSION = '0.6';
 # Sophos Migration Utility - CLI
-# Compatible with UTM 9.7xx to SFOS 19.5.1
+# Compatible with UTM 9.7xx to SFOS 19.5.1+
 #
 ## Known issues and limitations
 #
@@ -40,32 +40,38 @@ our $VERSION = '0.5';
 
 # 6. This version will import the local ID (usually a hostname) from UTM into SFOS.
 # 7. Users and groups are not imported.  For VPN definitions, they have to be added manually.
+# 8. Nested service and network groups are not imported, as they are not supported in SFOS.
 #
 ## Supported exports
 #   - Web Filter Action Allow and Block lists -> URL Groups
 #   - Website tags -> URL Groups
 #   - TCP, UDP, and TCP/UDP Services -> TCPorUDP Services
+#   - Service Groups
 #   - ICMP Services -> ICMP Services
 #   - ICMPv6 Services -> ICMPv6 Services
 #   - IP Services -> IP Services
 #   - Host Definitions -> FQDN Hosts, IP Hosts IPs (IPv4 and IPv6), and MACs
+#   - Network Groups
 #   - Network Definitions -> IP Host Networks (IPv4 and IPv6)
 #   - IP Ranges -> IP Host Ranges (IPv4 and IPv6)
 #   - DNS Group hostname -> FQDNHost
 #   - Gateway Hosts -> Gateways (IPv4)
-#    - VPN Settings - site-to-site
-#    - VPN Settings - SSL VPN remote access
+#   - VPN Settings - site-to-site
+#   - VPN Settings - SSL VPN remote access
+#   - Firewall Rules
 #
 ## Unsupported exports to be considered
 #   - Routes
 #   - VLANs
-#   - Firewall rules
+#   - Firewall Rules - Groups
 
 my $DEBUG = 0;
 my $CONFD = "/usr/local/bin/confd-client.plx";
 my $SNAPSHOT_DIR = "/var/confd/var/storage/snapshots/";
 my $HTML_TEMPLATE_DIR = './tmpl/';
 my $DEFAULT_INTERFACE_NAME = 'Port1';
+my $LOG_FIREWALL = 1;
+my $MIGRATE_FIREWALL_RULES = 1;
 
 use lib '.';
 use Protocols qw/$IP_PROTOS $ICMP4 $ICMP6/;
@@ -74,7 +80,7 @@ our %TEMPLATE_METADATA = (
     'Header.tmpl' => { },
     'Footer.tmpl' => { },
     'GatewayHost.tmpl' => { handler => \&parse_one_gatewayhost, class_types => ['itfparams/primary', 'route/policy'] },
-    'Host.tmpl' => { handler => \&parse_one_host, class_types => ['network/dns_host', 'network/host', 'network/network', 'network/interface_network', 'network/range', 'network/dns_group'] },
+    'Host.tmpl' => { handler => \&parse_one_host, class_types => ['network/dns_host', 'network/host', 'network/network', 'network/interface_network', 'network/range', 'network/dns_group', 'network/interface_address', 'network/interface_broadcast'] },
     'URLGroup.tmpl' => { handler => \&parse_one_url_group, class_types => ['http/cff_action'] },
     'Services.tmpl' => { handler => \&parse_one_service, class_types => ['service/tcp', 'service/udp', 'service/tcpudp', 'service/icmp', 'service/icmpv6', 'service/ip'] },
     # this is used for both s2s and remote access!
@@ -86,6 +92,9 @@ our %TEMPLATE_METADATA = (
     'SiteToSiteClient.tmpl' => { handler => \&parse_one_ssl_vpn_client, class_types => ['ssl_vpn/client_connection'], extra_data_path => 'Files/ServerConfigurationFile/0/' },
     'PPTPConfiguration.tmpl' => { handler => \&parse_remote_access_pptp_configuration },
     'SSLVPNPolicy.tmpl' => { handler => \&parse_remote_access_ssl_vpn, class_types => [ 'ssl_vpn/remote_access_profile' ] },
+    'IPHostGroup.tmpl' => { handler => \&parse_one_host_group, class_types => ['network/group'] },
+    'ServiceGroup.tmpl' => { handler => \&parse_service_group, class_types => ['service/group'] },
+    'FirewallRule.tmpl' => { handler => \&parse_firewall_rule, class_types => ['packetfilter/packetfilter'] },
 );
 
 our %CLASS_TYPE_TO_TEMPLATE;
@@ -120,6 +129,9 @@ our @ORDER = (
     'PPTPConfiguration.tmpl',
     'SSLVPNPolicy.tmpl',
     'SophosConnection.tmpl',
+    'IPHostGroup.tmpl',
+    'ServiceGroup.tmpl',
+    'FirewallRule.tmpl',
     'Footer.tmpl',
 );
 
@@ -135,6 +147,8 @@ sub usage {
     say STDERR "\t-s\t- Optional path to only export a single template type. For development purposes only.";
     say STDERR "\t-p\t- Optional SFOS interface name.\n\t\t  Default: $DEFAULT_INTERFACE_NAME";
     say STDERR "\t-h\t- Display this help / usage message.";
+    say STDERR "\t-l\t- Optional flag to migrate log settings for firewall rules\n\t\t  Default: off";
+    say STDERR "\t-F\t- Optional flag to disable migration of firewall rules\n\t\t  Default: off";
     say STDERR "Important: This tool is meant to be run on Sophos UTM / ASG systems. Usage on other systems may require you to";
     say STDERR "convert the snapshot file (see util/convert_snapshot.pl), and will require the -i option.";
     exit;
@@ -144,6 +158,132 @@ sub read_backup {
     my ($fn) = @_;
     -f $fn or die $!;
     return retrieve $fn;
+}
+
+sub parse_one_host_group {
+
+  my ($backup, $obj) = @_;
+  my @ret = ();
+  my @hosts = map { { name => escape_trunc(get_network_name($backup, $_)->{name}) } } @{$obj->{data}->{members}};
+  push @ret, {
+    name => escape_trunc($obj->{data}->{name}),
+    description => $obj->{data}->{comment},
+    group => 1,
+    family => 'IPv4',
+    hosts => \@hosts,
+
+  };
+  return \@ret;
+}
+
+sub parse_service_group {
+    my ($backup, $obj) = @_;
+    my @services = map { { name => escape_trunc($backup->{objects}->{$_}->{data}->{name}) } } @{$obj->{data}->{members}};
+    return {
+        servicegroup_name => escape_trunc($obj->{data}->{name}),
+        description => escape_trunc($obj->{data}->{comment}),
+        services => \@services,
+    }
+}
+
+sub get_firewall_rule_position {
+    my ($backup, $obj) = @_;
+    my $rule_ref = $obj->{ref};
+
+    my @rules = @{$backup->{main}->{packetfilter}->{rules}};
+    my $idx = -1;
+    for my $i (0 .. $#rules){
+        if ($rules[$i] eq $rule_ref){
+             $idx = $i;
+             last;
+        }
+    }
+    if ($idx == 0) {
+        return {
+            position => 'Bottom',
+            prev => ''
+        };
+    }
+
+    my $next_ref = $rules[$idx - 1];
+    return {
+        position => 'After',
+        prev => escape_trunc($backup->{objects}->{$next_ref}->{data}->{name}),
+    };
+}
+
+sub get_network_name {
+    my ($backup, $obj) = @_;
+    my $ref = get_ref($backup, $obj);
+    if ( defined $ref->{data}->{name} && $ref->{data}->{name} eq 'Internet IPv4' ){
+        return { name => 'Internet IPv4 group' };
+    }
+    return network_name($ref);
+}
+
+sub get_mac_names {
+    my ($backup, $obj) = @_;
+    my $ref = get_ref($backup, $obj);
+    my @mac_names = ();
+    if ($ref->{type} eq 'host') {
+        my @ret = @{parse_one_host_from_host($backup, $ref)};
+        foreach my $host_obj (@ret) {
+            if (exists($host_obj->{maclist}) && $host_obj->{maclist} eq 1) {
+                push @mac_names, {name => $host_obj->{name}};
+            }
+        }
+     }
+     return \@mac_names;
+}
+
+sub parse_firewall_rule {
+    if (! $MIGRATE_FIREWALL_RULES) {
+        return {};
+    }
+    my ($backup, $obj) = @_;
+    my $location = get_firewall_rule_position($backup, $obj);
+    my @services = map { { name => $backup->{objects}->{$_}->{data}->{name} } } @{$obj->{data}->{services}};
+    if (grep { $_->{ name } eq 'Any' } @services) {
+        @services = ();
+    }
+
+    my @sources = map { { name => get_network_name($backup, $_)->{name} } } @{$obj->{data}->{sources}};
+
+    if ($obj->{data}->{source_mac_addresses}) {
+        my @mac_networks = @{ get_ref($backup, $obj->{data}->{source_mac_addresses})->{data}->{host_list}};
+        foreach my $network_ref (@mac_networks) {
+            my @mac_names = @{get_mac_names($backup, $network_ref)};
+            foreach my $mac_name (@mac_names) {
+                push @sources, $mac_name;
+            }
+        }
+    }
+    if (grep { (exists $_->{ name } && !defined $_->{name})|| $_->{ name } eq 'Any' } @sources) {
+        @sources = ();
+    }
+
+    my @destinations = map { { name => get_network_name($backup, $_)->{name} } } @{$obj->{data}->{destinations}};
+
+    if (grep { (exists $_->{ name } && !defined $_->{name}) || $_->{ name } eq 'Any' } @destinations) {
+        @destinations = ();
+    }
+
+    @services = map { { name => escape_trunc($_->{name}) } } @{services};
+    @sources = map { { name => escape_trunc($_->{name}) } } @{sources};
+    @destinations = map { { name => escape_trunc($_->{name}) } } @{destinations};
+
+    return {
+        rule_name => escape_trunc($obj->{data}->{name}),
+        description => $obj->{data}->{comment},
+        status => ($obj->{data}->{status} ? 'Enable' : 'Disable'),
+        action => $obj->{data}->{action},
+        logtraffic => ($LOG_FIREWALL ? 'Enable' : ($obj->{data}->{log} ? 'Enable' : 'Disable')),
+        position => $location->{position},
+        position_name => ($location->{position} eq 'Bottom' ? undef : $location->{prev}),
+        services => \@services,
+        sources => \@sources,
+        destinations => \@destinations,
+    };
 }
 
 sub cidr_to_netmask {
@@ -213,7 +353,13 @@ sub is_any_network {
 sub network_name {
     my ($network_obj) = @_;
     my $host = @{ parse_one_host (undef, $network_obj) }[0];
-    return { name => $host->{name} };
+    my $group = @{ parse_one_host_group (undef, $network_obj) }[0];
+    if ($host && exists $host->{name}) {
+        return { name => $host->{name} };
+    }
+    if ($group && exists $group->{name}) {
+        return { name => $group->{name} };
+    }
 }
 
 sub split_array {
@@ -279,19 +425,19 @@ sub parse_one_host_from_host {
             address => $obj->{data}->{address6}
         };
     }
-
-    my @hostnames = @{ $obj->{data}->{hostnames} };
-    my $i = 1;
-    foreach my $hostname (@hostnames) {
-        push @ret, {
-            fqdn => 1,
-            name => "IP Host DNS: " . escape_trunc($obj->{data}->{name}, 40) . " $i",
-            type => 'FQDN',
-            address => $hostname
-        };
-        $i++;
+    if ($obj->{data}->{hostnames}) {
+        my @hostnames = @{ $obj->{data}->{hostnames} };
+        my $i = 1;
+        foreach my $hostname (@hostnames) {
+            push @ret, {
+                fqdn => 1,
+                name => "IP Host DNS: " . escape_trunc($obj->{data}->{name}, 40) . " $i",
+                type => 'FQDN',
+                address => $hostname
+            };
+            $i++;
+        }
     }
-
     my @macs;
     foreach my $mac (@{ $obj->{data}->{macs} }) {
         push @macs, {mac => $mac};
@@ -318,7 +464,7 @@ sub parse_one_host_from_network {
             type => 'Network',
             family => 'IPv4',
             address => $obj->{data}->{address},
-            subnet => cidr_to_netmask($obj->{data}->{netmask})
+            subnet => $obj->{data}->{netmask} ? cidr_to_netmask($obj->{data}->{netmask}) : undef
         };
     }
     if ($obj->{data}->{address6} && $obj->{data}->{address6} ne "" && $obj->{data}->{address6} ne "::") {
@@ -397,15 +543,15 @@ sub parse_one_host {
     my @ret = ();
 
     for ($obj->{type}) {
-        if ($_ eq 'dns_host') {
+        if (defined $_ && $_ eq 'dns_host') {
             return parse_one_host_from_dns_host $backup, $obj;
-        } elsif ($_ eq 'host') {
+        } elsif (defined $_ && ($_ eq 'host' or $_ eq 'interface_address' or $_ eq 'interface_broadcast')) {
             return parse_one_host_from_host $backup, $obj;
-        } elsif ($_ eq 'network' or $_ eq 'interface_network') {
+        } elsif (defined $_ && ($_ eq 'network' or $_ eq 'interface_network')) {
             return parse_one_host_from_network $backup, $obj;
-        } elsif ($_ eq 'range') {
+        } elsif (defined $_ && $_ eq 'range') {
             return parse_one_host_from_range $backup, $obj;
-        } elsif ($_ eq 'dns_group') {
+        } elsif (defined $_ && $_ eq 'dns_group') {
             return parse_one_host_from_dns_group $backup, $obj;
         }
     }
@@ -1025,6 +1171,7 @@ sub parse_backup {
 
     while (my ($name, $obj) = each %{ $backup->{objects} }) {
         my $key = $obj->{class} . '/' . $obj->{type};
+        next if $key eq 'packetfilter/packetfilter';
         my $template_name = $CLASS_TYPE_TO_TEMPLATE{$key};
 
         if ($template_name) {
@@ -1046,6 +1193,23 @@ sub parse_backup {
 
         } else {
             # class/type not handled
+        }
+    }
+    # Handling the firewall rules separately to maintain their order
+    my @rules = @{$backup->{main}->{packetfilter}->{rules}};
+    my $idx = -1;
+    for my $i (0 .. $#rules){
+        my $obj = $backup->{objects}->{$rules[$i]};
+        my $key = $obj->{class} . '/' . $obj->{type};
+        my $template_name = $CLASS_TYPE_TO_TEMPLATE{$key};
+
+        if ($template_name) {
+            next if defined $requested_template and $template_name ne $requested_template;
+            my $handler = $TEMPLATE_METADATA{$template_name}->{handler};
+            my ($template_data, $extra_data) = $handler->($backup, $obj);
+            if ($template_data) {
+                push @{ $entities{$template_name} }, @{ make_entities $template_name, $template_data };
+            }
         }
     }
 
@@ -1139,7 +1303,7 @@ sub parse_command_line_args {
     my $output_file = 'Export.tar';
     my %opt;
 
-    getopts('hdi:o:s:', \%opt);
+    getopts('Flhdi:o:s:', \%opt);
     usage() if $opt{h};
     usage() if (defined $opt{i} && ($opt{i} eq '' || ! -f $opt{i}));
     usage() if (defined $opt{o} && $opt{o} eq '');
@@ -1148,6 +1312,8 @@ sub parse_command_line_args {
     $output_file = $opt{o} if (defined $opt{o});
     $backup_path = $opt{i} if (defined $opt{i});
     $DEBUG = 1 if $opt{d};
+    $LOG_FIREWALL = 0 if (defined $opt{l});
+    $MIGRATE_FIREWALL_RULES = 0 if (defined $opt{F});
 
     return ($template_name, $output_file, $backup_path);
 }

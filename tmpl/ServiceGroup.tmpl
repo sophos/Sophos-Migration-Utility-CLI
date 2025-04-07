@@ -1,0 +1,9 @@
+<ServiceGroup transactionid="">
+  <Name><TMPL_VAR NAME="servicegroup_name"></Name>
+  <Description><TMPL_VAR NAME="description"></Description>
+  <ServiceList>
+      <TMPL_LOOP NAME="services">
+        <Service><TMPL_VAR NAME="name"></Service>
+      </TMPL_LOOP>
+  </ServiceList>
+</ServiceGroup>

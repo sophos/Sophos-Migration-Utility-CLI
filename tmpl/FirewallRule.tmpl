@@ -1,0 +1,33 @@
+<TMPL_IF NAME="rule_name">
+<FirewallRule transactionid="">
+  <Name><TMPL_VAR NAME="rule_name"></Name>
+  <Description><TMPL_VAR NAME="description"></Description>
+  <Status><TMPL_VAR NAME="status"></Status>
+  <Position><TMPL_VAR NAME="position"></Position>
+  <PolicyType>Network</PolicyType>
+  <TMPL_IF NAME="position_name">
+    <After>
+      <Name><TMPL_VAR NAME="position_name"></Name>
+    </After>
+  </TMPL_IF>
+  <NetworkPolicy>
+    <Action><TMPL_VAR NAME="action"></Action>
+    <LogTraffic><TMPL_VAR NAME="logtraffic"></LogTraffic>
+    <Services>
+      <TMPL_LOOP NAME="services">
+        <Service><TMPL_VAR NAME="name"></Service>
+      </TMPL_LOOP>
+    </Services>
+    <SourceNetworks>
+      <TMPL_LOOP NAME="sources">
+        <Network><TMPL_VAR NAME="name"></Network>
+      </TMPL_LOOP>
+    </SourceNetworks>
+    <DestinationNetworks>
+      <TMPL_LOOP NAME="destinations">
+        <Network><TMPL_VAR NAME="name"></Network>
+      </TMPL_LOOP>
+    </DestinationNetworks>
+  </NetworkPolicy>
+</FirewallRule>
+</TMPL_IF>

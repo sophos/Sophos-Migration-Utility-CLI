@@ -1,0 +1,10 @@
+<TMPL_IF NAME="group"><IPHostGroup transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
+    <Description><TMPL_VAR NAME="description"></Description>
+    <IPFamily><TMPL_VAR NAME="family"></IPFamily>
+    <HostList>
+      <TMPL_LOOP NAME="hosts">
+        <Host><TMPL_VAR NAME="name"></Host>
+      </TMPL_LOOP>
+    </HostList>
+</IPHostGroup></TMPL_IF>

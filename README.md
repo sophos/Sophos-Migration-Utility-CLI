@@ -13,6 +13,8 @@ USAGE: ./migrate.pl [-i path/to/snapshot] [-o path/to/Export.tar] [-d]
 - -d - Optional flag to enable debug output. Default: off
 - -s - Optional path to only export a single template type. For development purposes only.
 - -h - Display this help / usage message.
+- -l - Optional flag to migrate log settings for firewall rules. Default: off
+- -F - Optional flag to disable migration of firewall rules. Default: off
 
 Important: This tool is meant to be run on Sophos UTM / ASG systems. Usage on other systems may require you to convert the snapshot file (see util/convert_snapshot.pl), and will require the -i option.
 
@@ -113,29 +115,33 @@ It is not feasible to reimplement all the SFOS validation rules, so this tool wi
 
 6. This version will import the local ID (usually a hostname) from UTM into SFOS.
 7. Users and groups are not imported.  For VPN definitions, they have to be added manually.
+8. Nested service and network groups are not imported, as they are not supported in SFOS.
 
 # Supported exports:
    - Web Filter Action Allow and Block lists -> URL Groups
    - Website tags -> URL Groups
    - TCP, UDP, and TCP/UDP Services -> TCPorUDP Services
+   - Service Groups
    - ICMP Services -> ICMP Services
    - ICMPv6 Services -> ICMPv6 Services
    - IP Services -> IP Services
    - Host Definitions -> FQDN Hosts, IP Hosts IPs (IPv4 and IPv6), and MACs
+   - Network Groups
    - Network Definitions -> IP Host Networks (IPv4 and IPv6)
    - IP Ranges -> IP Host Ranges (IPv4 and IPv6)
    - DNS Group hostname -> FQDNHost
    - Gateway Hosts -> Gateways (IPv4)
    - VPN Settings - site-to-site
    - VPN Settings - SSL VPN remote access
+   - Firewall Rules
 
 # Unsupported exports to be considered:
    - Routes
    - VLANs
-   - Firewall rules
+   - Firewall Rules - Groups
 
 ## Copyright and License
-Copyright Sophos Ltd 2023
+Copyright Sophos Ltd 2025
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 2 of the License, or (at your option) any later version.
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
