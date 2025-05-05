@@ -16,8 +16,9 @@ use Storable;
 use HTML::Template;
 use Archive::Tar;
 use JSON;
+use Encode;
 
-our $VERSION = '0.6';
+our $VERSION = '0.7';
 # Sophos Migration Utility - CLI
 # Compatible with UTM 9.7xx to SFOS 19.5.1+
 #
@@ -164,9 +165,9 @@ sub parse_one_host_group {
 
   my ($backup, $obj) = @_;
   my @ret = ();
-  my @hosts = map { { name => escape_trunc(get_network_name($backup, $_)->{name}) } } @{$obj->{data}->{members}};
+  my @hosts = map { { name => get_network_name($backup, $_)->{name} } } @{$obj->{data}->{members}};
   push @ret, {
-    name => escape_trunc($obj->{data}->{name}),
+    name => escape_trunc("Net Group: ".$obj->{data}->{name}),
     description => $obj->{data}->{comment},
     group => 1,
     family => 'IPv4',
@@ -247,7 +248,12 @@ sub parse_firewall_rule {
         @services = ();
     }
 
-    my @sources = map { { name => get_network_name($backup, $_)->{name} } } @{$obj->{data}->{sources}};
+    my @sources = ();
+    foreach (@{$obj->{data}->{sources}}) {
+	my $nameobj = get_network_name($backup, $_);
+	my $name = $nameobj->{name};
+	push @sources, { name => $name } if $name;
+    }
 
     if ($obj->{data}->{source_mac_addresses}) {
         my @mac_networks = @{ get_ref($backup, $obj->{data}->{source_mac_addresses})->{data}->{host_list}};
@@ -258,23 +264,28 @@ sub parse_firewall_rule {
             }
         }
     }
-    if (grep { (exists $_->{ name } && !defined $_->{name})|| $_->{ name } eq 'Any' } @sources) {
+    if (grep { (exists $_->{ name } && !defined $_->{name})|| ($_->{ name } eq 'Any') || ($_->{ name } eq 'Any IPv4') } @sources) {
         @sources = ();
     }
 
-    my @destinations = map { { name => get_network_name($backup, $_)->{name} } } @{$obj->{data}->{destinations}};
+    my @destinations = ();
+    foreach (@{$obj->{data}->{destinations}}) {
+	my $nameobj = get_network_name($backup, $_);
+	my $name = $nameobj->{name};
+	push @destinations, { name => $name } if $name;
+    }
 
-    if (grep { (exists $_->{ name } && !defined $_->{name}) || $_->{ name } eq 'Any' } @destinations) {
+    if (grep { (exists $_->{ name } && !defined $_->{name}) || ($_->{ name } eq 'Any') || ($_->{ name } eq 'Any IPv4') } @destinations) {
         @destinations = ();
     }
 
     @services = map { { name => escape_trunc($_->{name}) } } @{services};
-    @sources = map { { name => escape_trunc($_->{name}) } } @{sources};
-    @destinations = map { { name => escape_trunc($_->{name}) } } @{destinations};
+    @sources = map { { name => $_->{name} } } @{sources};
+    @destinations = map { { name => $_->{name} } } @{destinations};
 
     return {
         rule_name => escape_trunc($obj->{data}->{name}),
-        description => $obj->{data}->{comment},
+        description => escape_html($obj->{data}->{comment}),
         status => ($obj->{data}->{status} ? 'Enable' : 'Disable'),
         action => $obj->{data}->{action},
         logtraffic => ($LOG_FIREWALL ? 'Enable' : ($obj->{data}->{log} ? 'Enable' : 'Disable')),
@@ -322,8 +333,8 @@ sub escape_trunc {
     my $s = shift;
     my $len = shift || 50;
     return "" if (!defined $s || $s eq "");
-    $s = escape_html($s);
     $s = trunc($s,$len);
+    $s = escape_html($s);
     return $s;
 }
 
@@ -353,13 +364,16 @@ sub is_any_network {
 sub network_name {
     my ($network_obj) = @_;
     my $host = @{ parse_one_host (undef, $network_obj) }[0];
-    my $group = @{ parse_one_host_group (undef, $network_obj) }[0];
     if ($host && exists $host->{name}) {
         return { name => $host->{name} };
     }
-    if ($group && exists $group->{name}) {
-        return { name => $group->{name} };
+    if (defined $network_obj->{data}->{members}) {
+        my $group = @{ parse_one_host_group (undef, $network_obj) }[0];
+        if ($group && exists $group->{name}) {
+            return { name => $group->{name} };
+        }
     }
+    return {};
 }
 
 sub split_array {
@@ -450,7 +464,6 @@ sub parse_one_host_from_host {
             macs => \@macs
         };
     }
-
     return \@ret;
 }
 
@@ -541,7 +554,6 @@ sub parse_one_host_from_dns_group {
 sub parse_one_host {
     my ($backup, $obj) = @_;
     my @ret = ();
-
     for ($obj->{type}) {
         if (defined $_ && $_ eq 'dns_host') {
             return parse_one_host_from_dns_host $backup, $obj;
@@ -1283,7 +1295,7 @@ sub get_xml_from_entities {
 sub make_export_tar {
     my ($entities, $extra_data) = @_;
     my $tar = Archive::Tar->new;
-    my $xml = get_xml_from_entities $entities;
+    my $xml = encode("utf-8", get_xml_from_entities ($entities));
     $tar->add_data('Entities.xml', $xml);
 
     for my $template (keys %$extra_data) {
