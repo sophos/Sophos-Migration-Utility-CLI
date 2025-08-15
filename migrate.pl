@@ -18,7 +18,7 @@ use Archive::Tar;
 use JSON;
 use Encode;
 
-our $VERSION = '0.7';
+our $VERSION = '0.8';
 # Sophos Migration Utility - CLI
 # Compatible with UTM 9.7xx to SFOS 19.5.1+
 #
@@ -881,6 +881,16 @@ sub parse_ssl_tunnel_access_settings {
     return \%ret;
 }
 
+sub sanitize_ssl_vpn_server_name {
+    my $name = shift;
+    return "" if (!defined $name || $name eq "");
+    $name =~ s/[^A-Za-z0-9_]/_/g;
+    if ($name =~ /\A[0-9_]/) {
+        $name = "D" . $name;
+    }
+    return trunc($name, 50);
+}
+
 sub parse_one_ssl_vpn_server {
     my ($backup, $obj) = @_;
 
@@ -896,12 +906,15 @@ sub parse_one_ssl_vpn_server {
     my @local_networks = map { network_name get_ref($backup, $_) } @{$obj->{data}->{local_networks}};
     my @remote_networks = map { network_name get_ref($backup, $_) } @{$obj->{data}->{remote_networks}};
 
+    my $sanitized_name = sanitize_ssl_vpn_server_name($obj->{data}->{name});
+
     return {
-        name => $obj->{data}->{name},
+        name => $sanitized_name,
         static_ip => ($obj->{data}->{static_ip_status} ? 'Disable' : 'Enable'),
         local_networks => \@local_networks,
         remote_networks => \@remote_networks,
         status => ($obj->{data}->{status} ? 'On' : 'Off'),
+        description => "Original Name: " . escape_html($obj->{data}->{name}),
     };
 }
 
@@ -1128,6 +1141,20 @@ sub parse_remote_access_pptp_configuration {
     my $pptp = $remote_access->{pptp};
     my $advanced = $remote_access->{advanced};
     my $ip_assignment_pool = get_ref($backup, $pptp->{ip_assignment_pool});
+
+    return {
+        general_settings => 'Enable',
+        # TODO ips can be assigned by radius too - not supported yet
+        ip_assignment_mode => $pptp->{ip_assignment_mode},
+        start_ip => undef,
+        end_ip => undef,
+        lease_ip_from_radius => 'Disable', # Enable Disable
+        primary_dns => $advanced->{msdns1},
+        secondary_dns => $advanced->{msdns2},
+        primary_wins => $advanced->{mswins1},
+        secondary_wins => $advanced->{mswins2},
+    } if !$ip_assignment_pool;
+
     my ($start_ip, $end_ip) = calculate_ip_range(
         $ip_assignment_pool->{data}->{address},
         cidr_to_netmask($ip_assignment_pool->{data}->{netmask}));
