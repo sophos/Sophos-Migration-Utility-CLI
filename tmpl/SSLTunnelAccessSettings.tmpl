@@ -5,6 +5,7 @@
   <Port><TMPL_VAR NAME="port"></Port>
   <IPLeaseRange>
     <StartIP><TMPL_VAR NAME="start_ip"></StartIP>
+    <TMPL_IF NAME="end_ip"><EndIP><TMPL_VAR NAME="end_ip"></EndIP></TMPL_IF>
   </IPLeaseRange>
   <SubnetMask><TMPL_VAR NAME="subnet_mask"></SubnetMask>
   <IPv6Lease><TMPL_VAR NAME="ipv6_lease"></IPv6Lease>

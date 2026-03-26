@@ -1,6 +1,7 @@
 <SiteToSiteServer transactionid="">
   <Name><TMPL_VAR NAME="name"></Name>
   <StaticIP>Disable</StaticIP>
+  <SSLServerCertificate><TMPL_VAR NAME="certificate"></SSLServerCertificate>
   <LocalNetworks>
     <TMPL_LOOP NAME="local_networks"><Network><TMPL_VAR NAME="name"></Network></TMPL_LOOP>
   </LocalNetworks>

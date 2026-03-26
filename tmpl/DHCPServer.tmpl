@@ -1,0 +1,64 @@
+<TMPL_IF NAME="enabled">
+<DHCPServer transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
+    <Status><TMPL_VAR NAME="status"></Status>
+    <Interface><TMPL_VAR NAME="interface"></Interface>
+    <TMPL_IF NAME="lease_ranges">
+    <IPLease>
+        <TMPL_LOOP NAME="lease_ranges">
+            <IP><TMPL_VAR NAME="range"></IP>
+        </TMPL_LOOP>
+    </IPLease>
+    </TMPL_IF>
+    <TMPL_IF NAME="has_static_leases">
+    <StaticLease>
+        <TMPL_LOOP NAME="static_leases">
+        <Lease>
+            <HostName><TMPL_VAR NAME="hostname"></HostName>
+            <MACAddress><TMPL_VAR NAME="mac_address"></MACAddress>
+            <IPAddress><TMPL_VAR NAME="ip_address"></IPAddress>
+        </Lease>
+        </TMPL_LOOP>
+    </StaticLease>
+    </TMPL_IF>
+    <ConflictDetection><TMPL_VAR NAME="conflict_detection"></ConflictDetection>
+    <LeaseForRelay><TMPL_VAR NAME="lease_for_relay"></LeaseForRelay>
+    <SubnetMask><TMPL_VAR NAME="subnet_mask"></SubnetMask>
+    <DomainName><TMPL_VAR NAME="domain_name"></DomainName>
+    <DefaultLeaseTime><TMPL_VAR NAME="default_lease_time"></DefaultLeaseTime>
+    <MaxLeaseTime><TMPL_VAR NAME="max_lease_time"></MaxLeaseTime>
+    <UseApplianceDNSSettings><TMPL_VAR NAME="use_appliance_dns_settings"></UseApplianceDNSSettings>
+    <TMPL_IF NAME="primary_dns">
+    <PrimaryDNSServer><TMPL_VAR NAME="primary_dns"></PrimaryDNSServer>
+    </TMPL_IF>
+    <TMPL_IF NAME="secondary_dns">
+    <SecondaryDNSServer><TMPL_VAR NAME="secondary_dns"></SecondaryDNSServer>
+    </TMPL_IF>
+    <TMPL_IF NAME="primary_wins">
+    <PrimaryWINSServer><TMPL_VAR NAME="primary_wins"></PrimaryWINSServer>
+    </TMPL_IF>
+    <TMPL_IF NAME="secondary_wins">
+    <SecondaryWINSServer><TMPL_VAR NAME="secondary_wins"></SecondaryWINSServer>
+    </TMPL_IF>
+    <TMPL_IF NAME="boot_server">
+    <BootServer><TMPL_VAR NAME="boot_server"></BootServer>
+    </TMPL_IF>
+    <TMPL_IF NAME="boot_file">
+    <BootFile><TMPL_VAR NAME="boot_file"></BootFile>
+    </TMPL_IF>
+    <TMPL_IF NAME="has_dhcp_options">
+    <DHCPOption>
+        <TMPL_LOOP NAME="dhcp_options">
+        <Options>
+            <OptionName><TMPL_VAR NAME="option_name"></OptionName>
+            <OptionCode><TMPL_VAR NAME="option_code"></OptionCode>
+            <OptionType><TMPL_VAR NAME="option_type"></OptionType>
+            <OptionValue><TMPL_VAR NAME="option_value"></OptionValue>
+        </Options>
+        </TMPL_LOOP>
+    </DHCPOption>
+    </TMPL_IF>
+    <Gateway><TMPL_VAR NAME="gateway"></Gateway>
+    <UseInterfaceIPasGateway><TMPL_VAR NAME="use_interface_ip_as_gateway"></UseInterfaceIPasGateway>
+</DHCPServer>
+</TMPL_IF>

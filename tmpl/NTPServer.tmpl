@@ -1,0 +1,59 @@
+<TMPL_IF NAME="has_ntp">
+<NATRule transactionid="">
+    <Name><TMPL_VAR NAME="nat_rule_name"></Name>
+    <Description><TMPL_VAR NAME="nat_description"></Description>
+    <IPFamily>IPv4</IPFamily>
+    <Status><TMPL_VAR NAME="nat_status"></Status>
+    <Position><TMPL_VAR NAME="nat_position"></Position>
+    <LinkedFirewallrule><TMPL_VAR NAME="nat_linked_firewall"></LinkedFirewallrule>
+    <TMPL_IF NAME="nat_source_networks">
+    <OriginalSourceNetworks>
+        <TMPL_LOOP NAME="nat_source_networks">
+        <Network><TMPL_VAR NAME="name"></Network>
+        </TMPL_LOOP>
+    </OriginalSourceNetworks>
+    </TMPL_IF>
+    <TranslatedDestination><TMPL_VAR NAME="nat_translated_dest"></TranslatedDestination>
+    <OriginalServices>
+        <Service><TMPL_VAR NAME="nat_original_service"></Service>
+    </OriginalServices>
+    <TranslatedService><TMPL_VAR NAME="nat_translated_service"></TranslatedService>
+    <OverrideInterfaceNATPolicy>Disable</OverrideInterfaceNATPolicy>
+    <TranslatedSource><TMPL_VAR NAME="nat_translated_source"></TranslatedSource>
+    <NATMethod><TMPL_VAR NAME="nat_method"></NATMethod>
+    <HealthCheck><TMPL_VAR NAME="nat_health_check"></HealthCheck>
+</NATRule>
+
+<FirewallRule transactionid="">
+    <Name><TMPL_VAR NAME="rule_name"></Name>
+    <Description><TMPL_VAR NAME="description"></Description>
+    <Status><TMPL_VAR NAME="status"></Status>
+    <Position><TMPL_VAR NAME="position"></Position>
+    <PolicyType>Network</PolicyType>
+    <NetworkPolicy>
+        <Action><TMPL_VAR NAME="action"></Action>
+        <LogTraffic><TMPL_VAR NAME="logtraffic"></LogTraffic>
+        <TMPL_IF NAME="services">
+        <Services>
+            <TMPL_LOOP NAME="services">
+            <Service><TMPL_VAR NAME="name"></Service>
+            </TMPL_LOOP>
+        </Services>
+        </TMPL_IF>
+        <TMPL_IF NAME="sources">
+        <SourceNetworks>
+            <TMPL_LOOP NAME="sources">
+            <Network><TMPL_VAR NAME="name"></Network>
+            </TMPL_LOOP>
+        </SourceNetworks>
+        </TMPL_IF>
+        <TMPL_IF NAME="destinations">
+        <DestinationNetworks>
+            <TMPL_LOOP NAME="destinations">
+            <Network><TMPL_VAR NAME="name"></Network>
+            </TMPL_LOOP>
+        </DestinationNetworks>
+        </TMPL_IF>
+    </NetworkPolicy>
+</FirewallRule>
+</TMPL_IF>

@@ -1,9 +1,29 @@
 <GatewayHost transactionid="">
     <Name><TMPL_VAR NAME="name"></Name>
-    <IPFamily>IPv4</IPFamily>
+    <IPFamily><TMPL_VAR NAME="ipfamily"></IPFamily>
     <GatewayIP><TMPL_VAR NAME="gateway_ip"></GatewayIP>
+<TMPL_IF NAME="has_interface">
+    <Interface><TMPL_VAR NAME="interface"></Interface>
+<TMPL_ELSE>
     <Interface/>
+</TMPL_IF>
+    <NetworkZone></NetworkZone>
     <NATPolicy/>
-    <Healthcheck>OFF</Healthcheck>
+    <Healthcheck><TMPL_VAR NAME="healthcheck"></Healthcheck>
     <MailNotification>OFF</MailNotification>
+<TMPL_IF NAME="healthcheck_enabled">
+    <Interval>15</Interval>
+    <FailureRetries>5</FailureRetries>
+    <Timeout>2</Timeout>
+    <MonitoringCondition>
+<TMPL_LOOP NAME="monitor_rules">
+        <Rule>
+            <Protocol><TMPL_VAR NAME="protocol"></Protocol>
+            <Port><TMPL_VAR NAME="port"></Port>
+            <IPAddress><TMPL_VAR NAME="host"></IPAddress>
+            <Condition><TMPL_VAR NAME="operator"></Condition>
+        </Rule>
+</TMPL_LOOP>
+    </MonitoringCondition>
+</TMPL_IF>
 </GatewayHost>

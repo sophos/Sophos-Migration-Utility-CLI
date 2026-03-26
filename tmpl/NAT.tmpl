@@ -1,34 +1,78 @@
+<TMPL_IF NAME="nat_auto_enabled">
+<FirewallRule transactionid="">
+    <Name><TMPL_VAR NAME="nat_auto_rule_name"></Name>
+    <Description><TMPL_VAR NAME="nat_auto_description"></Description>
+    <Status><TMPL_VAR NAME="nat_auto_status"></Status>
+    <Position><TMPL_VAR NAME="nat_auto_position"></Position>
+    <PolicyType>Network</PolicyType>
+    <NetworkPolicy>
+        <Action><TMPL_VAR NAME="nat_auto_action"></Action>
+        <LogTraffic><TMPL_VAR NAME="nat_auto_logtraffic"></LogTraffic>
+        <TMPL_IF NAME="nat_auto_services">
+        <Services>
+            <TMPL_LOOP NAME="nat_auto_services">
+                <Service><TMPL_VAR NAME="name"></Service>
+            </TMPL_LOOP>
+        </Services>
+        </TMPL_IF>
+        <TMPL_IF NAME="nat_auto_sources">
+        <SourceNetworks>
+            <TMPL_LOOP NAME="nat_auto_sources">
+                <Network><TMPL_VAR NAME="name"></Network>
+            </TMPL_LOOP>
+        </SourceNetworks>
+        </TMPL_IF>
+        <TMPL_IF NAME="nat_auto_destinations">
+        <DestinationNetworks>
+            <TMPL_LOOP NAME="nat_auto_destinations">
+                <Network><TMPL_VAR NAME="name"></Network>
+            </TMPL_LOOP>
+        </DestinationNetworks>
+        </TMPL_IF>
+    </NetworkPolicy>
+</FirewallRule>
+</TMPL_IF>
+<TMPL_IF NAME="enabled">
 <NATRule transactionid="">
-    <Name>#NAT_Default_Network_Policy</Name>
-    <Description/>
+    <Name><TMPL_VAR NAME="name"></Name>
+    <Description><TMPL_VAR NAME="description"></Description>
     <IPFamily>IPv4</IPFamily>
-    <Status>Enable</Status>
-    <Position>Top</Position>
-    <LinkedFirewallrule>#Default_Network_Policy</LinkedFirewallrule>
-    <TranslatedDestination>Original</TranslatedDestination>
-    <TranslatedService>Original</TranslatedService>
+    <Status><TMPL_VAR NAME="status"></Status>
+    <Position>Bottom</Position>
+    <LinkedFirewallrule><TMPL_VAR NAME="linked_firewall"></LinkedFirewallrule>
+    <TMPL_IF NAME="sources">
+    <OriginalSourceNetworks>
+        <TMPL_LOOP NAME="sources">
+            <Network><TMPL_VAR NAME="name"></Network>
+        </TMPL_LOOP>
+    </OriginalSourceNetworks>
+    </TMPL_IF>
+    <TMPL_IF NAME="destinations">
+    <OriginalDestinationNetworks>
+        <TMPL_LOOP NAME="destinations">
+            <Network><TMPL_VAR NAME="name"></Network>
+        </TMPL_LOOP>
+    </OriginalDestinationNetworks>
+    </TMPL_IF>
+    <TMPL_IF NAME="services">
+    <OriginalServices>
+        <TMPL_LOOP NAME="services">
+            <Service><TMPL_VAR NAME="name"></Service>
+        </TMPL_LOOP>
+    </OriginalServices>
+    </TMPL_IF>
+    <TMPL_IF NAME="outbound_interfaces">
+    <OutboundInterfaces>
+        <TMPL_LOOP NAME="outbound_interfaces">
+            <Interface><TMPL_VAR NAME="name"></Interface>
+        </TMPL_LOOP>
+    </OutboundInterfaces>
+    </TMPL_IF>
+    <TranslatedSource><TMPL_VAR NAME="translated_source"></TranslatedSource>
+    <TranslatedDestination><TMPL_VAR NAME="translated_destination"></TranslatedDestination>
+    <TranslatedService><TMPL_VAR NAME="translated_service"></TranslatedService>
+    <HealthCheck><TMPL_VAR NAME="health_check"></HealthCheck>
+    <NATMethod><TMPL_VAR NAME="nat_method"></NATMethod>
     <OverrideInterfaceNATPolicy>Disable</OverrideInterfaceNATPolicy>
-    <TranslatedSource>MASQ</TranslatedSource>
 </NATRule>
-<TMPL_LOOP NAME="nat">
-    <NATRule transactionid="">
-        <Name><TMPL_VAR NAME="name"></Name>
-        <Description><TMPL_VAR NAME="description"></Description>
-        <IPFamily>IPv4</IPFamily>
-        <Status><TMPL_VAR NAME="status"></Status>
-        <LinkedFirewallrule>None</LinkedFirewallrule>
-        <OriginalServices>
-            <Service><TMPL_VAR NAME="orig_service"></Service>
-        </OriginalServices>
-        <TranslatedService><TMPL_VAR NAME="trans_service"></TranslatedService>
-        <TranslatedSource>Original</TranslatedSource>
-        <TranslatedDestination><TMPL_VAR NAME="trans_dest"></TranslatedDestination>
-        <OverrideInterfaceNATPolicy>Disable</OverrideInterfaceNATPolicy>
-        <NATMethod>0</NATMethod>
-        <HealthCheck>Disable</HealthCheck>
-        <Position>After</Position>
-        <After>
-            <Name>TODO:???</Name>
-        </After>
-    </NATRule>
-</TMPL_LOOP>
+</TMPL_IF>

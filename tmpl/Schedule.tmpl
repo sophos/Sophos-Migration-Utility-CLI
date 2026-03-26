@@ -1,0 +1,22 @@
+<TMPL_IF NAME="name">
+<Schedule transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
+    <Description><TMPL_VAR NAME="description"></Description>
+    <Type><TMPL_VAR NAME="schedule_type"></Type>
+    <ScheduleDetails>
+        <TMPL_IF NAME="is_onetime">
+        <StartDate><TMPL_VAR NAME="start_date"></StartDate>
+        <EndDate><TMPL_VAR NAME="end_date"></EndDate>
+        </TMPL_IF>
+        <TMPL_IF NAME="is_recurring">
+        <TMPL_LOOP NAME="details">
+        <ScheduleDetail>
+            <Days><TMPL_VAR NAME="days"></Days>
+            <StartTime><TMPL_VAR NAME="start_time"></StartTime>
+            <StopTime><TMPL_VAR NAME="stop_time"></StopTime>
+        </ScheduleDetail>
+        </TMPL_LOOP>
+        </TMPL_IF>
+    </ScheduleDetails>
+</Schedule>
+</TMPL_IF>

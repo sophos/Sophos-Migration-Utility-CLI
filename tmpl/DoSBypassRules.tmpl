@@ -1,0 +1,15 @@
+<TMPL_IF NAME="name">
+<DoSBypassRules transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
+    <IPFamily><TMPL_VAR NAME="ipfamily"></IPFamily>
+    <TMPL_IF NAME="source">
+    <SourceIPNetmask><TMPL_VAR NAME="source"></SourceIPNetmask>
+    </TMPL_IF>
+    <TMPL_IF NAME="destination">
+    <DestinationIPNetmask><TMPL_VAR NAME="destination"></DestinationIPNetmask>
+    </TMPL_IF>
+    <Protocol><TMPL_VAR NAME="protocol"></Protocol>
+    <SourcePort><TMPL_VAR NAME="source_port"></SourcePort>
+    <DestinationPort><TMPL_VAR NAME="destination_port"></DestinationPort>
+</DoSBypassRules>
+</TMPL_IF>

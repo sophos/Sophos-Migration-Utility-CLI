@@ -1,0 +1,30 @@
+<TMPL_IF NAME="enabled">
+<WebFilterException transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
+    <Desc><TMPL_VAR NAME="description"></Desc>
+    <Enabled><TMPL_VAR NAME="status"></Enabled>
+    <HttpsDecrypt><TMPL_VAR NAME="httpsdecrypt"></HttpsDecrypt>
+    <CertValidation><TMPL_VAR NAME="certvalidation"></CertValidation>
+    <VirusScan><TMPL_VAR NAME="virusscan"></VirusScan>
+    <ZeroDayProtection><TMPL_VAR NAME="zeroday"></ZeroDayProtection>
+    <PolicyCheck><TMPL_VAR NAME="policycheck"></PolicyCheck>
+    <EnableSrcIP><TMPL_VAR NAME="enable_srcip"></EnableSrcIP>
+    <EnableDstIP><TMPL_VAR NAME="enable_dstip"></EnableDstIP>
+    <EnableURLRegex><TMPL_VAR NAME="enable_urlregex"></EnableURLRegex>
+    <EnableWebCat><TMPL_VAR NAME="enable_webcat"></EnableWebCat>
+    <DomainList>
+        <TMPL_LOOP NAME="srcip">
+            <SrcIp><TMPL_VAR NAME="value"></SrcIp>
+        </TMPL_LOOP>
+        <TMPL_LOOP NAME="dstip">
+            <DstIp><TMPL_VAR NAME="value"></DstIp>
+        </TMPL_LOOP>
+        <TMPL_LOOP NAME="urlregex">
+            <URLRegex><TMPL_VAR NAME="value"></URLRegex>
+        </TMPL_LOOP>
+        <TMPL_LOOP NAME="webcat">
+            <WebCategory><TMPL_VAR NAME="value"></WebCategory>
+        </TMPL_LOOP>
+    </DomainList>
+</WebFilterException>
+</TMPL_IF>

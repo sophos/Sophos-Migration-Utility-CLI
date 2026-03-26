@@ -1,0 +1,52 @@
+<TMPL_IF NAME="enabled">
+<DoSSettings transactionid="">
+    <SYNFlood>
+        <Source>
+            <PacketRatePerSource><TMPL_VAR NAME="syn_src_packet"></PacketRatePerSource>
+            <BurstRatePerSource><TMPL_VAR NAME="syn_src_burst"></BurstRatePerSource>
+            <ApplyFlag><TMPL_VAR NAME="syn_src_apply"></ApplyFlag>
+        </Source>
+        <Destination>
+            <PacketRatePerDestination><TMPL_VAR NAME="syn_dst_packet"></PacketRatePerDestination>
+            <BurstRatePerDestination><TMPL_VAR NAME="syn_dst_burst"></BurstRatePerDestination>
+            <ApplyFlag><TMPL_VAR NAME="syn_dst_apply"></ApplyFlag>
+        </Destination>
+    </SYNFlood>
+    <UDPFlood>
+        <Source>
+            <PacketRatePerSource><TMPL_VAR NAME="udp_src_packet"></PacketRatePerSource>
+            <BurstRatePerSource><TMPL_VAR NAME="udp_src_burst"></BurstRatePerSource>
+            <ApplyFlag><TMPL_VAR NAME="udp_src_apply"></ApplyFlag>
+        </Source>
+        <Destination>
+            <PacketRatePerDestination><TMPL_VAR NAME="udp_dst_packet"></PacketRatePerDestination>
+            <BurstRatePerDestination><TMPL_VAR NAME="udp_dst_burst"></BurstRatePerDestination>
+            <ApplyFlag><TMPL_VAR NAME="udp_dst_apply"></ApplyFlag>
+        </Destination>
+    </UDPFlood>
+    <TCPFlood>
+        <Source>
+            <PacketRatePerSource><TMPL_VAR NAME="tcp_src_packet"></PacketRatePerSource>
+            <BurstRatePerSource><TMPL_VAR NAME="tcp_src_burst"></BurstRatePerSource>
+            <ApplyFlag><TMPL_VAR NAME="tcp_src_apply"></ApplyFlag>
+        </Source>
+        <Destination>
+            <PacketRatePerDestination><TMPL_VAR NAME="tcp_dst_packet"></PacketRatePerDestination>
+            <BurstRatePerDestination><TMPL_VAR NAME="tcp_dst_burst"></BurstRatePerDestination>
+            <ApplyFlag><TMPL_VAR NAME="tcp_dst_apply"></ApplyFlag>
+        </Destination>
+    </TCPFlood>
+    <ICMPFlood>
+        <Source>
+            <PacketRatePerSource><TMPL_VAR NAME="icmp_src_packet"></PacketRatePerSource>
+            <BurstRatePerSource><TMPL_VAR NAME="icmp_src_burst"></BurstRatePerSource>
+            <ApplyFlag><TMPL_VAR NAME="icmp_src_apply"></ApplyFlag>
+        </Source>
+        <Destination>
+            <PacketRatePerDestination><TMPL_VAR NAME="icmp_dst_packet"></PacketRatePerDestination>
+            <BurstRatePerDestination><TMPL_VAR NAME="icmp_dst_burst"></BurstRatePerDestination>
+            <ApplyFlag><TMPL_VAR NAME="icmp_dst_apply"></ApplyFlag>
+        </Destination>
+    </ICMPFlood>
+</DoSSettings>
+</TMPL_IF>

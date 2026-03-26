@@ -1,0 +1,12 @@
+<UnicastRoute transactionid="">
+<IPFamily><TMPL_VAR NAME=ip_family></IPFamily>
+<DestinationIP><TMPL_VAR NAME=destination_ip></DestinationIP>
+<Netmask><TMPL_VAR NAME=netmask></Netmask>
+<TMPL_IF NAME=is_gateway_route><Gateway><TMPL_VAR NAME=gateway></Gateway></TMPL_IF><TMPL_UNLESS NAME=is_gateway_route><Gateway/></TMPL_UNLESS>
+<TMPL_IF NAME=is_interface_route><Interface><TMPL_VAR NAME=interface></Interface></TMPL_IF><TMPL_UNLESS NAME=is_interface_route><Interface></Interface></TMPL_UNLESS>
+<Distance><TMPL_VAR NAME=distance></Distance>
+<AdministrativeDistance><TMPL_VAR NAME=administrative_distance></AdministrativeDistance>
+            <Description><TMPL_VAR NAME=description></Description>
+            <Status><TMPL_VAR NAME=status></Status>
+            <Blackhole><TMPL_VAR NAME=blackhole></Blackhole>
+</UnicastRoute>

@@ -1,0 +1,12 @@
+<TMPL_IF NAME="sync_mode">
+<Time transactionid="">
+    <TMPL_IF NAME="use_custom_servers">
+    <CustomNTPServer>
+        <TMPL_LOOP NAME="custom_servers">
+            <NTPServer><TMPL_VAR NAME="server"></NTPServer>
+        </TMPL_LOOP>
+    </CustomNTPServer>
+    </TMPL_IF>
+    <PredefinedNTPServer><TMPL_VAR NAME="sync_mode"></PredefinedNTPServer>
+</Time>
+</TMPL_IF>

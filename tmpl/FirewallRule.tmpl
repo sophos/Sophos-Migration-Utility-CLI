@@ -4,7 +4,7 @@
   <Description><TMPL_VAR NAME="description"></Description>
   <Status><TMPL_VAR NAME="status"></Status>
   <Position><TMPL_VAR NAME="position"></Position>
-  <PolicyType>Network</PolicyType>
+  <PolicyType><TMPL_VAR NAME="policy_type" DEFAULT="Network"></PolicyType>
   <TMPL_IF NAME="position_name">
     <After>
       <Name><TMPL_VAR NAME="position_name"></Name>
@@ -13,21 +13,53 @@
   <NetworkPolicy>
     <Action><TMPL_VAR NAME="action"></Action>
     <LogTraffic><TMPL_VAR NAME="logtraffic"></LogTraffic>
+    <TMPL_IF NAME="dscp_marking"><DSCPMarking><TMPL_VAR NAME="dscp_marking"></DSCPMarking></TMPL_IF>
+    <TMPL_IF NAME="services">
     <Services>
       <TMPL_LOOP NAME="services">
         <Service><TMPL_VAR NAME="name"></Service>
       </TMPL_LOOP>
     </Services>
+    </TMPL_IF>
+    <TMPL_IF NAME="sources">
     <SourceNetworks>
       <TMPL_LOOP NAME="sources">
         <Network><TMPL_VAR NAME="name"></Network>
       </TMPL_LOOP>
     </SourceNetworks>
+    </TMPL_IF>
+    <TMPL_IF NAME="destinations">
     <DestinationNetworks>
       <TMPL_LOOP NAME="destinations">
         <Network><TMPL_VAR NAME="name"></Network>
       </TMPL_LOOP>
     </DestinationNetworks>
+    </TMPL_IF>
+    <TMPL_IF NAME="has_exclusions">
+    <Exclusions>
+      <TMPL_IF NAME="source_exclusions">
+      <SourceNetworks>
+        <TMPL_LOOP NAME="source_exclusions">
+          <Network><TMPL_VAR NAME="name"></Network>
+        </TMPL_LOOP>
+      </SourceNetworks>
+      </TMPL_IF>
+      <TMPL_IF NAME="destination_exclusions">
+      <DestinationNetworks>
+        <TMPL_LOOP NAME="destination_exclusions">
+          <Network><TMPL_VAR NAME="name"></Network>
+        </TMPL_LOOP>
+      </DestinationNetworks>
+      </TMPL_IF>
+      <TMPL_IF NAME="service_exclusions">
+      <Services>
+        <TMPL_LOOP NAME="service_exclusions">
+          <Service><TMPL_VAR NAME="name"></Service>
+        </TMPL_LOOP>
+      </Services>
+      </TMPL_IF>
+    </Exclusions>
+    </TMPL_IF>
   </NetworkPolicy>
 </FirewallRule>
 </TMPL_IF>

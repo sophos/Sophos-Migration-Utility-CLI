@@ -1,0 +1,21 @@
+<TMPL_IF NAME="status">
+<ATP transactionid="">
+    <ThreatProtectionStatus><TMPL_VAR NAME="status"></ThreatProtectionStatus>
+    <InspectContent><TMPL_VAR NAME="inspect_content"></InspectContent>
+    <Policy><TMPL_VAR NAME="policy"></Policy>
+    <TMPL_IF NAME="host_exceptions">
+    <HostException>
+        <TMPL_LOOP NAME="host_exceptions">
+            <Host><TMPL_VAR NAME="name"></Host>
+        </TMPL_LOOP>
+    </HostException>
+    </TMPL_IF>
+    <TMPL_IF NAME="threat_exceptions">
+    <ThreatException>
+        <TMPL_LOOP NAME="threat_exceptions">
+            <Threat><TMPL_VAR NAME="name"></Threat>
+        </TMPL_LOOP>
+    </ThreatException>
+    </TMPL_IF>
+</ATP>
+</TMPL_IF>

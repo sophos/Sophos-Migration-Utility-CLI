@@ -1,0 +1,14 @@
+<TMPL_IF NAME="dnshostentry"><DNSHostEntry transactionid="">
+    <HostName><TMPL_VAR NAME="hostname"></HostName>
+    <TMPL_IF NAME="addresses"><AddressList><TMPL_LOOP NAME="addresses">
+        <Address>
+            <EntryType><TMPL_VAR NAME="entry_type"></EntryType>
+            <IPFamily><TMPL_VAR NAME="ip_family"></IPFamily>
+            <IPAddress><TMPL_VAR NAME="ip_address"></IPAddress>
+            <TTL><TMPL_VAR NAME="ttl"></TTL>
+            <Weight><TMPL_VAR NAME="weight"></Weight>
+            <PublishOnWAN><TMPL_VAR NAME="publish_on_wan"></PublishOnWAN>
+        </Address></TMPL_LOOP>
+    </AddressList></TMPL_IF>
+    <AddReverseDNSLookUp><TMPL_VAR NAME="reverse_dns_lookup"></AddReverseDNSLookUp>
+</DNSHostEntry></TMPL_IF>

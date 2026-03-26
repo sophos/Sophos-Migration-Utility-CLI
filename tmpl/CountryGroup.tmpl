@@ -1,0 +1,9 @@
+<TMPL_IF NAME="name"><CountryGroup transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
+    <Description><TMPL_VAR NAME="description"></Description>
+    <CountryList>
+      <TMPL_LOOP NAME="countries">
+        <Country><TMPL_VAR NAME="name"></Country>
+      </TMPL_LOOP>
+    </CountryList>
+</CountryGroup></TMPL_IF>

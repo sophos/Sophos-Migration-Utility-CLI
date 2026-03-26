@@ -1,0 +1,11 @@
+<TMPL_IF NAME="group"><FQDNHostGroup transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
+    <Description><TMPL_VAR NAME="description"></Description>
+    <TMPL_IF NAME="hosts">
+    <FQDNHostList>
+      <TMPL_LOOP NAME="hosts">
+        <FQDNHost><TMPL_VAR NAME="name"></FQDNHost>
+      </TMPL_LOOP>
+    </FQDNHostList>
+    </TMPL_IF>
+</FQDNHostGroup></TMPL_IF>

@@ -1,0 +1,35 @@
+<TMPL_IF NAME="enabled">
+<DHCPServerIpv6 transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
+    <Status><TMPL_VAR NAME="status"></Status>
+    <Interface><TMPL_VAR NAME="interface"></Interface>
+    <TMPL_IF NAME="lease_ranges">
+    <IPLease>
+        <TMPL_LOOP NAME="lease_ranges">
+            <IP><TMPL_VAR NAME="range"></IP>
+        </TMPL_LOOP>
+    </IPLease>
+    </TMPL_IF>
+    <TMPL_IF NAME="has_static_leases">
+    <StaticLease>
+        <TMPL_LOOP NAME="static_leases">
+        <Lease>
+            <HostName><TMPL_VAR NAME="hostname"></HostName>
+            <DUID><TMPL_VAR NAME="duid"></DUID>
+            <IPAddress><TMPL_VAR NAME="ip_address"></IPAddress>
+        </Lease>
+        </TMPL_LOOP>
+    </StaticLease>
+    </TMPL_IF>
+    <LeaseForRelay><TMPL_VAR NAME="lease_for_relay"></LeaseForRelay>
+    <PreferredTime><TMPL_VAR NAME="default_lease_time"></PreferredTime>
+    <ValidTime><TMPL_VAR NAME="max_lease_time"></ValidTime>
+    <UseApplianceDNSSettings><TMPL_VAR NAME="use_appliance_dns_settings"></UseApplianceDNSSettings>
+    <TMPL_IF NAME="primary_dns">
+    <PrimaryDNSServer><TMPL_VAR NAME="primary_dns"></PrimaryDNSServer>
+    </TMPL_IF>
+    <TMPL_IF NAME="secondary_dns">
+    <SecondaryDNSServer><TMPL_VAR NAME="secondary_dns"></SecondaryDNSServer>
+    </TMPL_IF>
+</DHCPServerIpv6>
+</TMPL_IF>
