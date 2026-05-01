@@ -1,0 +1,39 @@
+<TMPL_IF NAME="name">
+<SDWANPolicyRoute transactionid="">
+    <Name><TMPL_VAR NAME="name"></Name>
+    <Description><TMPL_VAR NAME="description"></Description>
+    <IPFamily><TMPL_VAR NAME="ipfamily"></IPFamily>
+<TMPL_IF NAME="has_interface">
+    <Interface><TMPL_VAR NAME="interface"></Interface>
+<TMPL_ELSE>
+    <Interface/>
+</TMPL_IF>
+    <DSCPMarking><TMPL_VAR NAME="dscp_marking"></DSCPMarking>
+    <Gateway><TMPL_VAR NAME="gateway"></Gateway>
+    <BackupGateway></BackupGateway>
+    <TMPL_IF NAME="sources">
+    <SourceNetworks>
+<TMPL_LOOP NAME="sources">
+        <Network><TMPL_VAR NAME="name"></Network>
+</TMPL_LOOP>
+    </SourceNetworks>
+    </TMPL_IF>
+    <TMPL_IF NAME="destinations">
+    <DestinationNetworks>
+<TMPL_LOOP NAME="destinations">
+        <Network><TMPL_VAR NAME="name"></Network>
+</TMPL_LOOP>
+    </DestinationNetworks>
+    </TMPL_IF>
+    <TMPL_IF NAME="services">
+    <Services>
+<TMPL_LOOP NAME="services">
+        <Service><TMPL_VAR NAME="name"></Service>
+</TMPL_LOOP>
+    </Services>
+    </TMPL_IF>
+    <LinkSelection><TMPL_VAR NAME="link_selection"></LinkSelection>
+    <Healthcheck><TMPL_VAR NAME="healthcheck"></Healthcheck>
+    <Status><TMPL_VAR NAME="status"></Status>
+</SDWANPolicyRoute>
+</TMPL_IF>

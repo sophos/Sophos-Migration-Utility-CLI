@@ -24,6 +24,14 @@ USAGE: ./migrate.pl [-i path/to/snapshot] [-o path/to/Export.tar] [args]
 
 Important: This tool is meant to be run on Sophos UTM / ASG systems. Usage on other systems may require you to convert the snapshot file (see util/convert_snapshot.pl), and will require the -i option.
 
+### Sophos Firewall Config Studio
+
+Once you have generated the Export.tar file, you can view, analyze, compare, and edit the configuration exports before importing them into an SFOS device. To do so, extract the Entities.xml file within the Export.tar and upload it to https://docs.sophos.com/nsg/sophos-firewall/config-studio/index.html.
+
+To learn more, visit https://community.sophos.com/sophos-xg-firewall/b/blog/posts/sophos-firewall-config-studio-v2
+
+### Import into SFOS
+
 Once you have generated the Export.tar file, copy it to a system with access to the SFOS device Web Admin. On the SFOS UI, navigate to "System" > "Backup & firmware" > "Import export". Choose the file to import, and click "Import". Your objects will be imported after some time.
 
 ### Examples
@@ -145,11 +153,13 @@ It is not feasible to reimplement all the SFOS validation rules, so this tool wi
     - UTM certificate-derived `der_asn1_dn` VPN ID type is normalized to SFOS `DER ASN1 DN (X.509)` mapping.
 
 9. This version will import the local ID (usually a hostname) from UTM into SFOS.
-10. 7. Users and groups are not imported.  For VPN definitions, they have to be added manually.
+10. Users and groups are not imported.  For VPN definitions, they have to be added manually.
 11. Nested service and network groups are not imported, as they are not supported in SFOS.
 12. Time export is server-driven: `Time` is emitted when `main.ntp.servers` contains exportable values even if `main.ntp.status` is disabled. `NTPServer` access-rule export remains status-driven and requires resolvable references in both `main.ntp.allowed_networks` and `main.ntp.servers` (`host`, `dns_host`, `dns_group`, `availability_group`); when multiple refs are present, destination selection prefers NAT-compatible host/network/range objects before FQDN-only projections. Literal server values are exported only to `Time` custom server settings.
 13. NAT outbound interface export first applies best-effort UTM->SFOS mapping (`ethN` -> `PortN+1`), then falls back to `-I` (default `Port1`); unresolved references are skipped with warnings.
-14. Template emission is metadata-driven (`%TEMPLATE_METADATA`). Legacy labels like `SophosConnection` were not wired to an active v0.8 export handler and are not part of generated output.
+14. `route/policy` -> `SDWANPolicyRoute` export defaults to `LinkSelection=SelectGateways`, preserves UTM `main.routes.policy` order when available, maps selector interfaces with the same `PortN`/`ethN` logic and `-I` fallback, uses deterministic fallback primary gateway defaults when an interface-target route resolves to a non-SFOS-valid gateway (for example `0.0.0.0`), and keeps legacy `route/policy -> GatewayHost` projection enabled for gateway-reference compatibility (including SFOS-safe gateway-name truncation).
+15. Template emission is metadata-driven (`%TEMPLATE_METADATA`). Legacy labels like `SophosConnection` were not wired to an active v0.8 export handler and are not part of generated output.
+16. PIM-SM migration exports UTM `main.pim_sm` as `PIMDynamicRouting` (APIVersion `2105.1`). Interface resolution is object-aware and preserves hardware-backed mappings (for example named UTM interfaces linked to `ethN` hardware still export as `PortN+1`), while truly unmappable interfaces fall back to the `-I` default target interface for import safety. Phase-1 caveats: UTM `pim_sm/route`, `dr_priority`, `igmp_versions`, `spt_switch_*`, `debug`, `enable_subnet_multicasting`, and `auto_pfrule/auto_pf_out` are warning-dropped because no direct SFOS `2105.1` import mapping is implemented in this phase. SFOS `2105.1` also has a target-side limitation for disabled PIM imports: when `ManagePIM=Disable`, the parser/opcode path accepts the entity but drops `InterfaceList`, `CandidateRP`, `StaticRPIP`, and `GroupIP` before apply, so the final appliance state retains only the disabled PIM flag. For E2E validation, treat workflow summary as transport-level only and confirm entity-level parser outcomes (`ENTITY 'PIMDynamicRouting' IMPORT Success` with no `IMPORT Failed`) plus value checks from imported XML.
 
 # Supported exports:
    - Web Filter Action Allow and Block lists -> URL Groups
@@ -166,7 +176,9 @@ It is not feasible to reimplement all the SFOS validation rules, so this tool wi
    - IP Ranges -> IP Host Ranges (IPv4 and IPv6)
    - DNS Group hostname -> FQDNHost
    - Gateway Hosts -> Gateways (IPv4/IPv6 where resolvable)
+   - Policy Routes (`route/policy`) -> `SDWANPolicyRoute` (`SelectGateways`, ordered by `main.routes.policy` when present, selector-interface fallback via `-I` when source labels are not SFOS-compatible, and fallback primary-gateway derivation when interface-target defaults are non-exportable)
    - Static Routes (`route/static`) -> UnicastRoute (gateway routes, interface routes via `-I` with default `Port1`, and blackhole routes with SFOS-safe `Distance=0`)
+   - PIM-SM (`main.pim_sm`, `pim_sm/interface`, `pim_sm/rp_router`) -> `PIMDynamicRouting` (static RP mode) with object-aware interface mapping and `-I` fallback for truly unmappable interface refs; non-representable UTM PIM fields and `pim_sm/route` are warning-dropped in phase 1
    - VPN Settings - site-to-site, SSL VPN remote access, and PPTP configuration
    - Time schedules (`time/recurring`, `time/single`) -> `Schedule` (including overnight recurring split normalization)
    - Firewall Rules (including DSCP marking from Mangle rules)
@@ -177,8 +189,7 @@ It is not feasible to reimplement all the SFOS validation rules, so this tool wi
    - Web filter exceptions (`http/exception` -> `WebFilterException`) with skip-check projection for HTTPS decrypt/certificate validation, malware scan, zero-day protection, and policy checks; URL regex normalization preserves a leading `^` anchor while stripping `http(s)://` prefixes
    - Flood protection mapping (`flood_protection`) plus flood exclusions (`ips/exception` skiplist `tcp_flood|udp_flood|icmp_flood`) -> `DoSSettings` and `DoSBypassRules` (source/destination emitted as SFOS IPv4 literals or CIDR; PSD intentionally excluded)
    - NAT rules with optional firewall-for-NAT generation (`-N compat`), including Masquerading and Server Load Balancing, outbound interface projection, and explicit NATMethod/HealthCheck emission
-  - DHCP static leases attached to DHCP server payload (IPv4 and IPv6), with UTM-aligned non-relay vs relay subnet derivation, `lease_time` seconds->minutes alignment, relay-mode to `LeaseForRelay` mapping, optional WINS/boot/DHCP option transfer where safely mappable, interface normalization fallback via `-D`, hostname normalization + collision-safe de-collision for SFOS `dhcpHostname` compatibility, and migrated DHCPv4 servers emitted disabled (`Status=0`) for import safety
-   - HTTP proxy exception mapping only (`WebFilterException`)
+   - DHCP static leases attached to DHCP server payload (IPv4 and IPv6), with UTM-aligned non-relay vs relay subnet derivation, `lease_time` seconds->minutes alignment, relay-mode to `LeaseForRelay` mapping, optional WINS/boot/DHCP option transfer where safely mappable, interface normalization fallback via `-D`, hostname normalization + collision-safe de-collision for SFOS `dhcpHostname` compatibility, and migrated DHCPv4 servers emitted disabled (`Status=0`) for import safety
 
 ## Migration report
 
@@ -187,6 +198,11 @@ Default output path is `<Export.tar>.report.json`, or provide `-R <path>` to ove
 
 ## AI Usage
 Content co-created by Sophos and Cursor
+- Shared repo skills live in `.agents/skills/`; `.codex/skills` and `.cursor/skills` are compatibility symlink paths to that same bundle.
+- Codex-specific custom agents stay under `.codex/`, Cursor-specific adapters stay under `.cursor/`, and shared skills are edited only once under `.agents/skills/`.
+- Claude Code can link the same shared bundle into `~/.claude/skills/` with `scripts/link-shared-skills.sh --apply`.
+- Cursor assets under `.cursor/` are operational engineering guidance only; UTM behavior authority remains in `@utm`, SFOS behavior/API authority remains in `@copernicus-openwrt/basesystem`, and SMU remains authoritative only for conversion logic in this repository.
+- Workflow examples under `.cursor/` use `./artifacts/runtime-bundles/min` as the canonical minimal test bundle path.
 
 ## Copyright and License
 Copyright Sophos Ltd 2026

@@ -1,0 +1,27 @@
+<TMPL_IF NAME="enabled">
+<PIMDynamicRouting transactionid="">
+    <ManagePIM><TMPL_VAR NAME="manage_pim"></ManagePIM>
+    <TMPL_IF NAME="has_interface_list">
+    <InterfaceList>
+<TMPL_LOOP NAME="interface_rows">
+        <Interface><TMPL_VAR NAME="name"></Interface>
+</TMPL_LOOP>
+    </InterfaceList>
+    </TMPL_IF>
+    <CandidateRP><TMPL_VAR NAME="candidate_rp"></CandidateRP>
+    <TMPL_IF NAME="is_static_rp">
+<TMPL_LOOP NAME="static_rp_rows">
+    <StaticRPIP>
+        <IPAddress><TMPL_VAR NAME="rp_ip"></IPAddress>
+        <TMPL_IF NAME="group_rows">
+        <GroupIP>
+<TMPL_LOOP NAME="group_rows">
+            <IPAddress><TMPL_VAR NAME="group_ip"></IPAddress>
+</TMPL_LOOP>
+        </GroupIP>
+        </TMPL_IF>
+    </StaticRPIP>
+</TMPL_LOOP>
+    </TMPL_IF>
+</PIMDynamicRouting>
+</TMPL_IF>

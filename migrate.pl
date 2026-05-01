@@ -19,7 +19,7 @@ use JSON;
 use Encode;
 use Socket qw(inet_aton inet_ntoa);
 
-our $VERSION = '1.0';
+our $VERSION = '1.1';
 # Sophos Migration Utility - CLI
 # Compatible with UTM 9.7xx to SFOS APIVersion 2105.1
 #
@@ -51,6 +51,7 @@ our $VERSION = '1.0';
 #   - DNS Host entries (static DNS)
 #   - Gateway Hosts -> Gateways (IPv4/IPv6 where resolvable)
 #   - Static routes (unicast)
+#   - Policy routes (route/policy -> SDWANPolicyRoute)
 #   - Schedules (recurring and one-time)
 #   - Certificates
 #   - VPN (IPsec profiles + site-to-site connections; SSL tunnel settings; SSL VPN server/client; SSL VPN remote access policy)
@@ -64,9 +65,10 @@ our $VERSION = '1.0';
 #   - DoS settings + bypass rules
 #   - DHCP servers (IPv4/IPv6)
 #   - Web Filter exceptions
+#   - PIM-SM (main.pim_sm -> PIMDynamicRouting, static RP mode)
 #
 ## Unsupported exports to be considered
-#   - Routes (beyond static routes)
+#   - Routes (beyond static routes and policy routes)
 #   - VLANs
 #   - Firewall Rules - Groups
 
@@ -100,11 +102,13 @@ our %TEMPLATE_METADATA = (
     'Header.tmpl' => { },
     'Footer.tmpl' => { },
     'GatewayHost.tmpl' => { handler => \&parse_one_gatewayhost, class_types => ['itfparams/primary', 'route/policy'] },
+    'SDWANPolicyRoute.tmpl' => { handler => \&parse_sdwan_policy_routes, class_types => [] },
     'Host.tmpl' => { handler => \&parse_one_host, class_types => ['network/dns_host', 'network/host', 'network/network', 'network/interface_network', 'network/range', 'network/dns_group', 'network/availability_group', 'network/interface_address', 'network/interface_broadcast', 'mac_list/mac_list'] },
     'DNSHostEntry.tmpl' => { handler => \&parse_dns_host_entries, class_types => [] },
     'URLGroup.tmpl' => { handler => \&parse_one_url_group, class_types => ['http/cff_action'] },
     'Services.tmpl' => { handler => \&parse_one_service, class_types => ['service/tcp', 'service/udp', 'service/tcpudp', 'service/icmp', 'service/icmpv6', 'service/ip', 'service/esp', 'service/ah', 'service/any'] },
     'UnicastRoute.tmpl' => { handler => \&parse_one_static_route, class_types => ['route/static'] },
+    'PIMDynamicRouting.tmpl' => { handler => \&parse_pim_dynamic_routing, class_types => [] },
     'Schedule.tmpl' => { handler => \&parse_one_schedule, class_types => ['time/recurring', 'time/single'] },
     # this is used for both s2s and remote access!
     'SSLTunnelAccessSettings.tmpl' => { handler => \&parse_ssl_tunnel_access_settings, class_types => [] },
@@ -157,11 +161,13 @@ our @ORDER = (
     'GatewayHost.tmpl',
     'Services.tmpl',
     'UnicastRoute.tmpl',
+    'PIMDynamicRouting.tmpl',
     'URLGroup.tmpl',
     'IPHostGroup.tmpl',
     'FQDNHostGroup.tmpl',
     'CountryGroup.tmpl',
     'ServiceGroup.tmpl',
+    'SDWANPolicyRoute.tmpl',
     'Schedule.tmpl',
     'Certificate.tmpl',
     'VPNProfile.tmpl',
@@ -451,7 +457,7 @@ sub usage {
     say STDERR "\t\t  If -i is not specified, a snapshot of the current UTM configuration will be created and used.";
     say STDERR "\t-o\t- Optional export path for the SFOS compatible TAR file.\n\t\t  Default: ./Export.tar";
     say STDERR "\t-d\t- Optional debug output; repeat for higher verbosity (-dd enables validation failure reasons)\n\t\t  Default: off";
-    say STDERR "\t-s\t- Optional path to only export a single template type. For development purposes only.";
+    say STDERR "\t-s\t- Optional template name to only export a single template type to STDOUT. For development purposes only.";
     say STDERR "\t-p\t- Optional SFOS interface name for VPN local interface defaults.\n\t\t  Default: $DEFAULT_INTERFACE_NAME";
     say STDERR "\t-D\t- Optional SFOS interface name for DHCP fallback when source interface labels are not SFOS-compatible.\n\t\t  Default: $DEFAULT_DHCP_INTERFACE_NAME";
     say STDERR "\t-h\t- Display this help / usage message.";
@@ -2594,6 +2600,730 @@ sub map_utm_interface_name_to_sfos {
     return '';
 }
 
+sub find_interface_object_for_primary_ref {
+    my ($backup, $primary_ref) = @_;
+    return undef if ref($backup) ne 'HASH' || !defined $primary_ref || $primary_ref eq '';
+
+    for my $obj (values %{ $backup->{objects} // {} }) {
+        next if !$obj || ($obj->{class} // '') ne 'interface';
+        next if ref($obj->{data}) ne 'HASH';
+        next if ($obj->{data}->{primary_address} // '') ne $primary_ref;
+        return $obj;
+    }
+
+    return undef;
+}
+
+sub map_utm_interface_object_to_sfos {
+    my (%args) = @_;
+    my $backup = $args{backup};
+    my $obj = $args{obj};
+    my $ref = $args{ref} // '';
+    return '' if ref($obj) ne 'HASH';
+
+    my @candidates;
+    my $data = ref($obj->{data}) eq 'HASH' ? $obj->{data} : {};
+    push @candidates, $data->{name} // '';
+    push @candidates, $data->{hardware} // '';
+
+    if (($obj->{class} // '') eq 'interface') {
+        my $itfhw_ref = $data->{itfhw} // '';
+        if ($itfhw_ref ne '') {
+            my $itfhw_obj = get_ref($backup, $itfhw_ref);
+            if ($itfhw_obj && ref($itfhw_obj->{data}) eq 'HASH') {
+                push @candidates, $itfhw_obj->{data}->{hardware} // '';
+                push @candidates, $itfhw_obj->{data}->{name} // '';
+            }
+        }
+    } elsif (($obj->{class} // '') eq 'itfparams' && ($obj->{type} // '') eq 'primary') {
+        my $interface_obj = find_interface_object_for_primary_ref($backup, $ref);
+        if ($interface_obj && ref($interface_obj->{data}) eq 'HASH') {
+            push @candidates, $interface_obj->{data}->{name} // '';
+            my $itfhw_ref = $interface_obj->{data}->{itfhw} // '';
+            if ($itfhw_ref ne '') {
+                my $itfhw_obj = get_ref($backup, $itfhw_ref);
+                if ($itfhw_obj && ref($itfhw_obj->{data}) eq 'HASH') {
+                    push @candidates, $itfhw_obj->{data}->{hardware} // '';
+                    push @candidates, $itfhw_obj->{data}->{name} // '';
+                }
+            }
+        }
+    }
+
+    my %seen;
+    for my $candidate (@candidates) {
+        next if !defined $candidate || $candidate eq '';
+        next if $seen{$candidate}++;
+        my $mapped = map_utm_interface_name_to_sfos($candidate);
+        return $mapped if $mapped ne '';
+    }
+
+    return '';
+}
+
+sub is_valid_sfos_pim_rp_ip {
+    my ($ip) = @_;
+    return 0 if !is_valid_ipv4_literal($ip);
+    return 0 if $ip eq '0.0.0.0' || $ip eq '255.255.255.255';
+    my @octets = split /\./, $ip;
+    return 0 if @octets != 4;
+    return 0 if $octets[0] == 127;
+    return 0 if $octets[0] == 169 && $octets[1] == 254;
+    return 0 if $octets[0] >= 224;
+    return 1;
+}
+
+sub pim_multicast_group_cidr_from_ref {
+    my ($backup, $group_ref) = @_;
+    return '' if !defined $group_ref || $group_ref eq '';
+    my $group = get_ref($backup, $group_ref);
+    return '' if !$group || ($group->{class} // '') ne 'network' || ($group->{type} // '') ne 'multicast';
+    return '' if ref($group->{data}) ne 'HASH';
+
+    my $address = $group->{data}->{address} // '';
+    return '' if !is_valid_ipv4_literal($address);
+    my @octets = split /\./, $address;
+    return '' if @octets != 4;
+    return '' if $octets[0] < 224 || $octets[0] > 239;
+    return '' if $octets[0] == 224 && $octets[1] == 0 && $octets[2] == 0;
+
+    my $netmask = $group->{data}->{netmask};
+    $netmask = 32 if !defined $netmask || $netmask eq '';
+    return '' if $netmask !~ /^\d+$/ || $netmask < 4 || $netmask > 32;
+
+    return $address . '/' . $netmask;
+}
+
+sub collect_pim_interface_rows {
+    my ($backup, $pim) = @_;
+    my @interface_rows;
+    my %seen_interface;
+    my %unsupported_fields = (
+        dr_priority => 0,
+        igmp_versions => 0,
+    );
+
+    for my $pim_iface_ref (@{ ensure_arrayref($pim->{interfaces}) }) {
+        next if !defined $pim_iface_ref || $pim_iface_ref eq '';
+        my $pim_iface = get_ref($backup, $pim_iface_ref);
+        if (
+            !$pim_iface
+            || ($pim_iface->{class} // '') ne 'pim_sm'
+            || ($pim_iface->{type} // '') ne 'interface'
+            || ref($pim_iface->{data}) ne 'HASH'
+        ) {
+            add_warning('pim-sm', 'Skipping unresolved or incompatible pim_sm/interface reference while building PIMDynamicRouting', {
+                reference => $pim_iface_ref,
+            });
+            increment_stat('pim_sm.interface.skipped.unresolved');
+            next;
+        }
+
+        my $iface_data = $pim_iface->{data};
+        my $dr_priority = $iface_data->{dr_priority};
+        $unsupported_fields{dr_priority}++ if defined $dr_priority && $dr_priority ne '' && $dr_priority != 0;
+
+        my @igmp_versions = map { lc($_ // '') } @{ ensure_arrayref($iface_data->{igmp_versions}) };
+        @igmp_versions = grep { $_ ne '' } @igmp_versions;
+        my %expected = map { $_ => 1 } qw(v2 v3);
+        my $igmp_is_default = @igmp_versions == 2 && $expected{$igmp_versions[0]} && $expected{$igmp_versions[1]};
+        $unsupported_fields{igmp_versions}++ if @igmp_versions && !$igmp_is_default;
+
+        my $interface_ref = $iface_data->{interface} // '';
+        if ($interface_ref eq '') {
+            add_warning('pim-sm', 'Skipping pim_sm/interface entry with missing interface reference', {
+                reference => $pim_iface_ref,
+            });
+            increment_stat('pim_sm.interface.skipped.missing_interface_ref');
+            next;
+        }
+
+        my $interface_obj = get_ref($backup, $interface_ref);
+        my $utm_interface_name = ref_to_object_name($backup, $interface_ref);
+        if ($utm_interface_name eq '') {
+            add_warning('pim-sm', 'Skipping pim_sm/interface entry because referenced interface object could not be resolved', {
+                reference => $pim_iface_ref,
+                interface_ref => $interface_ref,
+            });
+            increment_stat('pim_sm.interface.skipped.interface_unresolved');
+            next;
+        }
+
+        my $sfos_interface_name = map_utm_interface_object_to_sfos(
+            backup => $backup,
+            obj => $interface_obj,
+            ref => $interface_ref,
+        );
+        if ($sfos_interface_name eq '') {
+            my $fallback_interface = map_utm_interface_name_to_sfos($INTERFACE_ROUTE_NAME);
+            if ($fallback_interface ne '') {
+                add_warning('pim-sm', 'PIM interface is not directly SFOS-compatible after object-aware resolution; using interface default override (-I) for import safety', {
+                    reference => $pim_iface_ref,
+                    interface_ref => $interface_ref,
+                    source_interface => $utm_interface_name,
+                    fallback_interface => $fallback_interface,
+                });
+                $sfos_interface_name = $fallback_interface;
+            }
+        }
+        if ($sfos_interface_name eq '') {
+            add_warning('pim-sm', 'Skipping pim_sm/interface entry because source interface is not SFOS-compatible', {
+                reference => $pim_iface_ref,
+                interface_ref => $interface_ref,
+                source_interface => $utm_interface_name,
+            });
+            increment_stat('pim_sm.interface.skipped.interface_unmapped');
+            next;
+        }
+
+        next if $seen_interface{$sfos_interface_name}++;
+        push @interface_rows, { name => $sfos_interface_name };
+    }
+
+    return \@interface_rows, \%unsupported_fields;
+}
+
+sub collect_pim_static_rp_rows {
+    my ($backup, $pim) = @_;
+    my @rp_order;
+    my %rp_groups_by_ip;
+    my %rp_group_seen;
+    my %global_group_seen;
+
+    for my $rp_ref (@{ ensure_arrayref($pim->{rp_routers}) }) {
+        next if !defined $rp_ref || $rp_ref eq '';
+        my $rp_obj = get_ref($backup, $rp_ref);
+        if (
+            !$rp_obj
+            || ($rp_obj->{class} // '') ne 'pim_sm'
+            || ($rp_obj->{type} // '') ne 'rp_router'
+            || ref($rp_obj->{data}) ne 'HASH'
+        ) {
+            add_warning('pim-sm', 'Skipping unresolved or incompatible pim_sm/rp_router reference while building PIMDynamicRouting', {
+                reference => $rp_ref,
+            });
+            increment_stat('pim_sm.rp.skipped.unresolved');
+            next;
+        }
+
+        my $rp_data = $rp_obj->{data};
+        my $host_ref = $rp_data->{host} // '';
+        my $host_obj = get_ref($backup, $host_ref);
+        my $rp_ip = ($host_obj && ref($host_obj->{data}) eq 'HASH') ? ($host_obj->{data}->{address} // '') : '';
+        if (!is_valid_sfos_pim_rp_ip($rp_ip)) {
+            add_warning('pim-sm', 'Skipping pim_sm/rp_router entry because RP host does not resolve to an SFOS-valid IPv4 unicast address', {
+                reference => $rp_ref,
+                host_ref => $host_ref,
+                rp_ip => $rp_ip,
+            });
+            increment_stat('pim_sm.rp.skipped.invalid_rp_ip');
+            next;
+        }
+
+        if (!exists $rp_groups_by_ip{$rp_ip}) {
+            $rp_groups_by_ip{$rp_ip} = [];
+            push @rp_order, $rp_ip;
+        }
+
+        for my $group_ref (@{ ensure_arrayref($rp_data->{multicast_groups}) }) {
+            my $cidr = pim_multicast_group_cidr_from_ref($backup, $group_ref);
+            if ($cidr eq '') {
+                add_warning('pim-sm', 'Skipping pim_sm/rp_router multicast group because it is not representable as an SFOS PIM group CIDR', {
+                    reference => $rp_ref,
+                    rp_ip => $rp_ip,
+                    group_ref => $group_ref,
+                });
+                increment_stat('pim_sm.group.skipped.invalid');
+                next;
+            }
+
+            if ($global_group_seen{$cidr}++) {
+                add_warning('pim-sm', 'Skipping duplicate multicast group CIDR across RP rows to satisfy SFOS PIM validation', {
+                    cidr => $cidr,
+                    rp_ip => $rp_ip,
+                });
+                increment_stat('pim_sm.group.skipped.duplicate');
+                next;
+            }
+
+            next if $rp_group_seen{$rp_ip}{$cidr}++;
+            push @{ $rp_groups_by_ip{$rp_ip} }, $cidr;
+        }
+    }
+
+    my @rows;
+    for my $rp_ip (@rp_order) {
+        my @groups = @{ $rp_groups_by_ip{$rp_ip} // [] };
+        if (!@groups) {
+            add_warning('pim-sm', 'Skipping pim_sm/rp_router entry because no SFOS-valid multicast groups remain after normalization', {
+                rp_ip => $rp_ip,
+            });
+            increment_stat('pim_sm.rp.skipped.empty_groups');
+            next;
+        }
+
+        if (@groups > 8) {
+            add_warning('pim-sm', 'Trimming multicast groups per RP to SFOS maximum (8) for PIM import validation', {
+                rp_ip => $rp_ip,
+                before => scalar(@groups),
+                after => 8,
+            });
+            increment_stat('pim_sm.group.trimmed');
+            @groups = @groups[0..7];
+        }
+
+        push @rows, {
+            rp_ip => $rp_ip,
+            group_rows => [ map { { group_ip => $_ } } @groups ],
+        };
+    }
+
+    if (@rows > 8) {
+        add_warning('pim-sm', 'Trimming static RP list to SFOS maximum (8) for PIM import validation', {
+            before => scalar(@rows),
+            after => 8,
+        });
+        increment_stat('pim_sm.rp.trimmed');
+        @rows = @rows[0..7];
+    }
+
+    return \@rows;
+}
+
+sub collect_pim_nonrepresentable_fields {
+    my (%args) = @_;
+    my $pim = $args{pim};
+    my $unsupported_interface_fields = $args{unsupported_interface_fields};
+    my $route_count = $args{route_count} // 0;
+    my @fields;
+
+    push @fields, 'spt_switch_status' if exists $pim->{spt_switch_status};
+    push @fields, 'spt_switch_bytes' if exists $pim->{spt_switch_bytes};
+    push @fields, 'debug' if exists $pim->{debug} && is_true($pim->{debug});
+    push @fields, 'enable_subnet_multicasting' if exists $pim->{enable_subnet_multicasting} && is_true($pim->{enable_subnet_multicasting});
+    push @fields, 'auto_pfrule' if exists $pim->{auto_pfrule} && is_true($pim->{auto_pfrule});
+    push @fields, 'auto_pf_out' if exists $pim->{auto_pf_out} && ($pim->{auto_pf_out} // '') ne '';
+
+    if (ref($unsupported_interface_fields) eq 'HASH') {
+        push @fields, 'dr_priority' if ($unsupported_interface_fields->{dr_priority} // 0) > 0;
+        push @fields, 'igmp_versions' if ($unsupported_interface_fields->{igmp_versions} // 0) > 0;
+    }
+
+    push @fields, 'pim_sm/route' if $route_count > 0;
+    my %seen;
+    @fields = grep { !$seen{$_}++ } @fields;
+    return \@fields;
+}
+
+sub count_pim_sm_route_objects {
+    my ($backup) = @_;
+    my $count = 0;
+    for my $obj (values %{ $backup->{objects} // {} }) {
+        next if !$obj;
+        next if ($obj->{class} // '') ne 'pim_sm';
+        next if ($obj->{type} // '') ne 'route';
+        $count++;
+    }
+    return $count;
+}
+
+sub collect_pim_sm_export_context {
+    my ($backup) = @_;
+    return $backup->{_smu_pim_sm_export_context} if ref($backup->{_smu_pim_sm_export_context}) eq 'HASH';
+
+    my $context = {
+        emit_pim => 0,
+        pim_template => {},
+    };
+
+    my $main = $backup->{main};
+    if (ref($main) ne 'HASH' || ref($main->{pim_sm}) ne 'HASH' || !exists $main->{pim_sm}->{status}) {
+        $backup->{_smu_pim_sm_export_context} = $context;
+        return $context;
+    }
+
+    my $pim = $main->{pim_sm};
+    my $source_enabled = is_true($pim->{status});
+    my ($interface_rows, $unsupported_interface_fields) = collect_pim_interface_rows($backup, $pim);
+    my $static_rp_rows = collect_pim_static_rp_rows($backup, $pim);
+    my $route_count = count_pim_sm_route_objects($backup);
+
+    my $nonrepresentable_fields = collect_pim_nonrepresentable_fields(
+        pim => $pim,
+        unsupported_interface_fields => $unsupported_interface_fields,
+        route_count => $route_count,
+    );
+    if (@$nonrepresentable_fields) {
+        add_warning('pim-sm', 'UTM PIM fields without direct SFOS 2105.1 mapping are skipped in this export phase', {
+            fields => $nonrepresentable_fields,
+            route_object_count => $route_count,
+        });
+        increment_stat('pim_sm.field.skipped');
+    }
+
+    my $effective_enabled = $source_enabled ? 1 : 0;
+    if ($source_enabled && !@$interface_rows) {
+        add_warning('pim-sm', 'UTM PIM is enabled but no SFOS-compatible interfaces remained; exporting ManagePIM=Disable for import safety', {
+            source_interface_count => scalar(@{ ensure_arrayref($pim->{interfaces}) }),
+        });
+        increment_stat('pim_sm.disabled.no_interfaces');
+        $effective_enabled = 0;
+    }
+    if ($source_enabled && !@$static_rp_rows) {
+        add_warning('pim-sm', 'UTM PIM is enabled but no SFOS-compatible static RP rows remained; exporting ManagePIM=Disable for import safety', {
+            source_rp_count => scalar(@{ ensure_arrayref($pim->{rp_routers}) }),
+        });
+        increment_stat('pim_sm.disabled.no_rp');
+        $effective_enabled = 0;
+    }
+
+    my $is_static_rp = @$static_rp_rows ? 1 : 0;
+
+    $context->{emit_pim} = 1;
+    $context->{pim_template} = {
+        enabled => 1,
+        manage_pim => $effective_enabled ? 'Enable' : 'Disable',
+        is_enabled => $effective_enabled ? 1 : 0,
+        has_interface_list => (@$interface_rows ? 1 : 0),
+        interface_rows => $interface_rows,
+        candidate_rp => $is_static_rp ? 'Static' : 'Disable',
+        is_static_rp => $is_static_rp,
+        static_rp_rows => $static_rp_rows,
+        is_dynamic_rp => 0,
+    };
+    increment_stat('pim_sm.entity');
+    increment_stat('pim_sm.source.enabled') if $source_enabled;
+    if ($effective_enabled) {
+        increment_stat('pim_sm.enabled');
+    } else {
+        increment_stat('pim_sm.disabled');
+    }
+
+    $backup->{_smu_pim_sm_export_context} = $context;
+    return $context;
+}
+
+sub parse_pim_dynamic_routing {
+    my ($backup) = @_;
+    my $context = collect_pim_sm_export_context($backup);
+    return [] if !$context->{emit_pim};
+    return $context->{pim_template};
+}
+
+sub policy_route_name_for_family {
+    my ($base_name, $ipfamily, $candidate_count) = @_;
+    my $name = $base_name // '';
+    if ($ipfamily eq 'IPv6' && $candidate_count > 1) {
+        return $name . ' IPv6';
+    }
+    return $name;
+}
+
+sub is_sfos_valid_gateway_candidate {
+    my ($ipfamily, $gateway_ip) = @_;
+    $ipfamily = $ipfamily // 'IPv4';
+    return 0 if !defined $gateway_ip || $gateway_ip eq '';
+    if ($ipfamily eq 'IPv6') {
+        return is_valid_ipv6_literal($gateway_ip) ? 1 : 0;
+    }
+    return 0 if $gateway_ip eq '0.0.0.0';
+    return is_valid_ipv4_literal($gateway_ip) ? 1 : 0;
+}
+
+sub has_sfos_valid_gateway_candidate {
+    my ($candidates) = @_;
+    for my $candidate (@{ ensure_arrayref($candidates) }) {
+        next if ref($candidate) ne 'HASH';
+        my $ipfamily = $candidate->{ipfamily} // 'IPv4';
+        my $gateway_ip = $candidate->{gateway_ip} // '';
+        return 1 if is_sfos_valid_gateway_candidate($ipfamily, $gateway_ip);
+    }
+    return 0;
+}
+
+sub build_gateway_candidates {
+    my (%args) = @_;
+    my $gateway_ip = $args{gateway_ip} // '';
+    my $gateway_ip6 = $args{gateway_ip6} // '';
+    my @gateway_candidates;
+    push @gateway_candidates, { ipfamily => 'IPv4', gateway_ip => $gateway_ip } if $gateway_ip ne '';
+    push @gateway_candidates, { ipfamily => 'IPv6', gateway_ip => $gateway_ip6 } if $gateway_ip6 ne '';
+    return \@gateway_candidates;
+}
+
+sub derive_fallback_policy_route_primary_gateway_context {
+    my (%args) = @_;
+    my $backup = $args{backup};
+    my $exclude_primary_ref = $args{exclude_primary_ref} // '';
+    return undef if ref($backup) ne 'HASH';
+
+    for my $ref (sort keys %{ $backup->{objects} // {} }) {
+        next if $exclude_primary_ref ne '' && $ref eq $exclude_primary_ref;
+        my $obj = $backup->{objects}{$ref};
+        next if !$obj;
+        next if ($obj->{class} // '') ne 'itfparams' || ($obj->{type} // '') ne 'primary';
+        next if !$obj->{data};
+
+        my $gateway_candidates = build_gateway_candidates(
+            gateway_ip => $obj->{data}->{default_gateway_address},
+            gateway_ip6 => $obj->{data}->{default_gateway_address6},
+        );
+        next if !has_sfos_valid_gateway_candidate($gateway_candidates);
+
+        return {
+            primary_ref => $ref,
+            primary_name => $obj->{data}->{name} // '',
+            gateway_candidates => $gateway_candidates,
+        };
+    }
+    return undef;
+}
+
+sub derive_route_policy_gateway_context {
+    my ($backup, $obj) = @_;
+    my $route_type = $obj->{data}->{type} // '';
+    my $target_ref = $obj->{data}->{target} // '';
+    my $target = get_ref($backup, $target_ref);
+    my $target_name = ($target && $target->{data}) ? ($target->{data}->{name} // '') : '';
+
+    my $interface = '';
+    my $interface_state = 'none';
+    my $primary_missing = 0;
+    my $primary_name = '';
+    my $primary_ref = '';
+    my $fallback_gateway_used = 0;
+    my $fallback_primary_ref = '';
+    my $fallback_primary_name = '';
+    my @gateway_candidates;
+
+    if ($route_type eq 'itf') {
+        my $mapped_interface = map_utm_interface_object_to_sfos(
+            backup => $backup,
+            obj => $target,
+            ref => $target_ref,
+        );
+        if ($mapped_interface ne '') {
+            $interface = $mapped_interface;
+            $interface_state = (lc($target_name) ne lc($mapped_interface)) ? 'mapped' : 'exact';
+        } elsif ($target_name ne '') {
+            my $fallback_interface = map_utm_interface_name_to_sfos($INTERFACE_ROUTE_NAME);
+            if ($fallback_interface ne '') {
+                $interface = $fallback_interface;
+                $interface_state = 'defaulted';
+            } else {
+                $interface_state = 'unmapped';
+            }
+        }
+
+        $primary_ref = ($target && $target->{data}) ? ($target->{data}->{primary_address} // '') : '';
+        my $primary = $primary_ref ne '' ? get_ref($backup, $primary_ref) : undef;
+        if ($primary && $primary->{data}) {
+            $primary_name = $primary->{data}->{name} // '';
+            @gateway_candidates = @{ build_gateway_candidates(
+                gateway_ip => $primary->{data}->{default_gateway_address},
+                gateway_ip6 => $primary->{data}->{default_gateway_address6},
+            ) };
+        } else {
+            $primary_missing = 1;
+        }
+
+        if (!has_sfos_valid_gateway_candidate(\@gateway_candidates)) {
+            my $fallback_context = derive_fallback_policy_route_primary_gateway_context(
+                backup => $backup,
+                exclude_primary_ref => $primary_ref,
+            );
+            if ($fallback_context) {
+                @gateway_candidates = @{ $fallback_context->{gateway_candidates} // [] };
+                $primary_name = $fallback_context->{primary_name} // $primary_name;
+                $primary_missing = 0;
+                $fallback_gateway_used = 1;
+                $fallback_primary_ref = $fallback_context->{primary_ref} // '';
+                $fallback_primary_name = $fallback_context->{primary_name} // '';
+            }
+        }
+    } else {
+        @gateway_candidates = @{ build_gateway_candidates(
+            gateway_ip => ($target && $target->{data}) ? ($target->{data}->{address} // '') : '',
+            gateway_ip6 => ($target && $target->{data}) ? ($target->{data}->{address6} // '') : '',
+        ) };
+    }
+
+    return {
+        route_type => $route_type,
+        target_ref => $target_ref,
+        target_name => $target_name,
+        interface => $interface,
+        interface_state => $interface_state,
+        primary_missing => $primary_missing,
+        primary_name => $primary_name,
+        primary_ref => $primary_ref,
+        fallback_gateway_used => $fallback_gateway_used,
+        fallback_primary_ref => $fallback_primary_ref,
+        fallback_primary_name => $fallback_primary_name,
+        gateway_candidates => \@gateway_candidates,
+    };
+}
+
+sub validate_gateway_candidates_for_sfos {
+    my (%args) = @_;
+    my $name = $args{name} // '';
+    my $warning_category = $args{warning_category} // 'gateway-host';
+    my $invalid_message = $args{invalid_message} // 'Skipping gateway candidate with invalid GatewayIP for SFOS import';
+    my @candidates = @{ ensure_arrayref($args{candidates}) };
+    my @valid_candidates;
+
+    for my $candidate (@candidates) {
+        next if ref($candidate) ne 'HASH';
+        my $gateway_ip = $candidate->{gateway_ip} // '';
+        my $ipfamily = $candidate->{ipfamily} // 'IPv4';
+        my $is_valid = is_sfos_valid_gateway_candidate($ipfamily, $gateway_ip);
+        if (!$is_valid) {
+            add_warning($warning_category, $invalid_message, {
+                name => $name,
+                gateway_ip => $gateway_ip,
+                ipfamily => $ipfamily,
+            });
+            next;
+        }
+        push @valid_candidates, {
+            ipfamily => $ipfamily,
+            gateway_ip => $gateway_ip,
+        };
+    }
+
+    return \@valid_candidates;
+}
+
+sub is_ipv4_firewall_network_name {
+    my ($name) = @_;
+    return 0 if !defined $name || $name eq '';
+    return 1 if $name eq 'Any' || $name eq 'Any IPv4';
+    return 1 if $name =~ /^(?:Host IP:|Network:|Range:)/;
+    return 0;
+}
+
+sub filter_policy_route_network_rows_by_family {
+    my (%args) = @_;
+    my $rows = ensure_arrayref($args{rows});
+    my $ipfamily = $args{ipfamily} // 'IPv4';
+    my $route_name = $args{route_name} // '';
+
+    my @filtered;
+    my @dropped;
+    my $any_match = 0;
+    for my $row (@$rows) {
+        next if ref($row) ne 'HASH';
+        my $name = $row->{name} // '';
+        next if $name eq '';
+
+        if ($name eq 'Any') {
+            $any_match = 1;
+            next;
+        }
+
+        if ($ipfamily eq 'IPv4' && $name eq 'Any IPv4') {
+            $any_match = 1;
+            next;
+        }
+        if ($ipfamily eq 'IPv6' && $name eq 'Any IPv6') {
+            $any_match = 1;
+            next;
+        }
+
+        if ($ipfamily eq 'IPv4' && is_ipv6_firewall_network_name($name)) {
+            push @dropped, $name;
+            next;
+        }
+        if ($ipfamily eq 'IPv6' && is_ipv4_firewall_network_name($name)) {
+            push @dropped, $name;
+            next;
+        }
+        push @filtered, { name => $name };
+    }
+
+    if (@dropped) {
+        my %seen_dropped;
+        @dropped = grep { !$seen_dropped{$_}++ } @dropped;
+        add_warning('sdwan-policy-route', 'Dropped family-mismatched source/destination references for SD-WAN policy route', {
+            route => $route_name,
+            ipfamily => $ipfamily,
+            dropped_networks => \@dropped,
+        });
+        increment_stat('sdwan.policy_route.network_family_dropped', scalar @dropped);
+    }
+
+    return [] if $any_match;
+    my %seen;
+    @filtered = grep { !$seen{$_->{name}}++ } @filtered;
+    return \@filtered;
+}
+
+sub collect_ordered_route_policy_objects {
+    my ($backup) = @_;
+    my @ordered;
+    my %seen_refs;
+
+    my @main_refs = @{ ensure_arrayref($backup->{main}->{routes}->{policy}) };
+    for my $ref (@main_refs) {
+        next if !defined $ref || $ref eq '' || $seen_refs{$ref}++;
+        my $obj = get_ref($backup, $ref);
+        next if !$obj;
+        next if ($obj->{class} // '') ne 'route' || ($obj->{type} // '') ne 'policy';
+        push @ordered, $obj;
+    }
+
+    for my $ref (sort keys %{ $backup->{objects} // {} }) {
+        next if $seen_refs{$ref}++;
+        my $obj = $backup->{objects}{$ref};
+        next if !$obj;
+        next if ($obj->{class} // '') ne 'route' || ($obj->{type} // '') ne 'policy';
+        push @ordered, $obj;
+    }
+
+    return \@ordered;
+}
+
+sub resolve_policy_route_match_interface {
+    my ($backup, $obj) = @_;
+    my $interface_ref = $obj->{data}->{interface} // '';
+    my %ret = (
+        interface => '',
+        source_interface => '',
+        interface_ref => $interface_ref,
+        state => 'none',
+    );
+    return \%ret if $interface_ref eq '' || $interface_ref eq '-1';
+
+    my $source_interface = ref_to_object_name($backup, $interface_ref);
+    $ret{source_interface} = $source_interface;
+    if ($source_interface eq '') {
+        $ret{state} = 'missing';
+        return \%ret;
+    }
+
+    my $interface_obj = get_ref($backup, $interface_ref);
+    my $mapped_interface = map_utm_interface_object_to_sfos(
+        backup => $backup,
+        obj => $interface_obj,
+        ref => $interface_ref,
+    );
+    if ($mapped_interface ne '') {
+        $ret{interface} = $mapped_interface;
+        $ret{state} = (lc($source_interface) ne lc($mapped_interface)) ? 'mapped' : 'exact';
+        return \%ret;
+    }
+
+    my $fallback_interface = map_utm_interface_name_to_sfos($INTERFACE_ROUTE_NAME);
+    if ($fallback_interface ne '') {
+        $ret{interface} = $fallback_interface;
+        $ret{state} = 'defaulted';
+        return \%ret;
+    }
+
+    $ret{state} = 'unmapped';
+    return \%ret;
+}
+
 sub parse_one_gatewayhost {
     my ($backup, $obj) = @_;
     my $class_type = $obj->{class} . '/' . $obj->{type};
@@ -2604,10 +3334,15 @@ sub parse_one_gatewayhost {
 
     if ($class_type eq 'itfparams/primary') {
         my $source_interface = $obj->{data}->{name} // '';
-        my $mapped_interface = map_utm_interface_name_to_sfos($source_interface);
+        my $mapped_interface = map_utm_interface_object_to_sfos(
+            backup => $backup,
+            obj => $obj,
+            ref => $obj->{ref} // '',
+        );
         if ($mapped_interface ne '') {
-            $interface = $mapped_interface;
-            if (lc($source_interface) ne lc($mapped_interface)) {
+            if (lc($source_interface) eq lc($mapped_interface)) {
+                $interface = $mapped_interface;
+            } else {
                 add_warning('gateway-host', 'Mapped gateway interface to SFOS-compatible placeholder', {
                     name => $name,
                     source_interface => $source_interface,
@@ -2619,7 +3354,6 @@ sub parse_one_gatewayhost {
         } elsif ($source_interface ne '') {
             my $fallback_interface = map_utm_interface_name_to_sfos($INTERFACE_ROUTE_NAME);
             if ($fallback_interface ne '') {
-                $interface = $fallback_interface;
                 add_warning('gateway-host', 'Gateway interface name is not SFOS-compatible; using interface default override (-I)', {
                     name => $name,
                     source_interface => $source_interface,
@@ -2636,100 +3370,85 @@ sub parse_one_gatewayhost {
                 increment_stat('gateway.host.interface.unmapped');
             }
         }
-        my $gateway_ip = $obj->{data}->{default_gateway_address} // '';
-        my $gateway_ip6 = $obj->{data}->{default_gateway_address6} // '';
-        push @gateway_candidates, { ipfamily => 'IPv4', gateway_ip => $gateway_ip } if $gateway_ip ne '';
-        push @gateway_candidates, { ipfamily => 'IPv6', gateway_ip => $gateway_ip6 } if $gateway_ip6 ne '';
+        @gateway_candidates = @{ build_gateway_candidates(
+            gateway_ip => $obj->{data}->{default_gateway_address},
+            gateway_ip6 => $obj->{data}->{default_gateway_address6},
+        ) };
         $healthcheck_enabled = 1;
     } elsif ($class_type eq 'route/policy') {
-        my $route_type = $obj->{data}->{type} // '';
-        my $target = get_ref($backup, $obj->{data}->{target});
-        if ($route_type eq 'itf') {
-            my $target_name = ($target && $target->{data}) ? ($target->{data}->{name} // '') : '';
-            my $mapped_interface = map_utm_interface_name_to_sfos($target_name);
-            if ($mapped_interface ne '') {
-                $interface = $mapped_interface;
-                if (lc($target_name) ne lc($mapped_interface)) {
-                    add_warning('gateway-host', 'Mapped policy-route interface to SFOS-compatible placeholder', {
-                        name => $name,
-                        target_interface => $target_name,
-                        mapped_interface => $mapped_interface,
-                        target => $obj->{data}->{target} // '',
-                    });
-                    increment_stat('gateway.host.policy.interface.mapped');
-                }
-            } elsif ($target_name ne '') {
-                my $fallback_interface = map_utm_interface_name_to_sfos($INTERFACE_ROUTE_NAME);
-                if ($fallback_interface ne '') {
-                    $interface = $fallback_interface;
-                    add_warning('gateway-host', 'Policy-route target interface name is not SFOS-compatible; using interface default override (-I)', {
-                        name => $name,
-                        target_interface => $target_name,
-                        fallback_interface => $fallback_interface,
-                        target => $obj->{data}->{target} // '',
-                    });
-                    increment_stat('gateway.host.policy.interface.defaulted');
-                } else {
-                    add_warning('gateway-host', 'Policy-route target interface name is not SFOS-compatible; exporting without explicit Interface binding', {
-                        name => $name,
-                        target_interface => $target_name,
-                        target => $obj->{data}->{target} // '',
-                    });
-                    increment_stat('gateway.host.policy.interface.unmapped');
-                }
+        my $gateway_context = derive_route_policy_gateway_context($backup, $obj);
+        $interface = $gateway_context->{interface_state} && ($gateway_context->{interface_state} // '') eq 'exact'
+            ? ($gateway_context->{interface} // '')
+            : '';
+        @gateway_candidates = @{ $gateway_context->{gateway_candidates} // [] };
+        my $is_itf_route = (($gateway_context->{route_type} // '') eq 'itf');
+        if ($is_itf_route) {
+            my $interface_state = $gateway_context->{interface_state} // '';
+            if ($interface_state eq 'mapped') {
+                add_warning('gateway-host', 'Mapped policy-route interface to SFOS-compatible placeholder', {
+                    name => $name,
+                    target_interface => $gateway_context->{target_name} // '',
+                    mapped_interface => $interface,
+                    target => $gateway_context->{target_ref} // '',
+                });
+                increment_stat('gateway.host.policy.interface.mapped');
+            } elsif ($interface_state eq 'defaulted') {
+                add_warning('gateway-host', 'Policy-route target interface name is not SFOS-compatible; using interface default override (-I)', {
+                    name => $name,
+                    target_interface => $gateway_context->{target_name} // '',
+                    fallback_interface => $interface,
+                    target => $gateway_context->{target_ref} // '',
+                });
+                increment_stat('gateway.host.policy.interface.defaulted');
+            } elsif ($interface_state eq 'unmapped') {
+                add_warning('gateway-host', 'Policy-route target interface name is not SFOS-compatible; exporting without explicit Interface binding', {
+                    name => $name,
+                    target_interface => $gateway_context->{target_name} // '',
+                    target => $gateway_context->{target_ref} // '',
+                });
+                increment_stat('gateway.host.policy.interface.unmapped');
             }
 
-            my $primary_ref = ($target && $target->{data}) ? ($target->{data}->{primary_address} // '') : '';
-            my $primary = $primary_ref ne '' ? get_ref($backup, $primary_ref) : undef;
-            if ($primary && $primary->{data}) {
-                my $gateway_ip = $primary->{data}->{default_gateway_address} // '';
-                my $gateway_ip6 = $primary->{data}->{default_gateway_address6} // '';
-                push @gateway_candidates, { ipfamily => 'IPv4', gateway_ip => $gateway_ip } if $gateway_ip ne '';
-                push @gateway_candidates, { ipfamily => 'IPv6', gateway_ip => $gateway_ip6 } if $gateway_ip6 ne '';
-            } else {
+            if ($gateway_context->{fallback_gateway_used}) {
+                add_warning('gateway-host', 'Policy-route target primary gateway was not SFOS-valid; using fallback primary gateway defaults', {
+                    name => $name,
+                    target_interface => $gateway_context->{target_name} // '',
+                    target => $gateway_context->{target_ref} // '',
+                    fallback_primary => $gateway_context->{fallback_primary_name} // '',
+                    fallback_primary_ref => $gateway_context->{fallback_primary_ref} // '',
+                });
+                increment_stat('gateway.host.policy.gateway.defaulted');
+            }
+
+            if ($gateway_context->{primary_missing}) {
                 add_warning('gateway-host', 'Policy-route interface target did not resolve to a primary interface address object; skipping gateway host export', {
                     name => $name,
-                    target => $obj->{data}->{target} // '',
+                    target => $gateway_context->{target_ref} // '',
                 });
             }
         } else {
-            my $gateway_ip = ($target && $target->{data}) ? ($target->{data}->{address} // '') : '';
-            my $gateway_ip6 = ($target && $target->{data}) ? ($target->{data}->{address6} // '') : '';
-            push @gateway_candidates, { ipfamily => 'IPv4', gateway_ip => $gateway_ip } if $gateway_ip ne '';
-            push @gateway_candidates, { ipfamily => 'IPv6', gateway_ip => $gateway_ip6 } if $gateway_ip6 ne '';
+            my $first_candidate = $gateway_candidates[0] // {};
             add_warning('gateway-host', 'Route-policy gateway host lacks deterministic SFOS interface mapping; keeping Healthcheck OFF', {
                 name => $name,
-                gateway_ip => ($gateway_ip ne '' ? $gateway_ip : $gateway_ip6),
-                target => $obj->{data}->{target} // '',
+                gateway_ip => $first_candidate->{gateway_ip} // '',
+                target => $gateway_context->{target_ref} // '',
             });
         }
     } else {
         return [];
     }
 
-    my @valid_gateway_candidates;
-    for my $candidate (@gateway_candidates) {
-        my $gateway_ip = $candidate->{gateway_ip} // '';
-        my $ipfamily = $candidate->{ipfamily} // 'IPv4';
-        my $is_valid = ($ipfamily eq 'IPv6') ? is_valid_ipv6_literal($gateway_ip) : is_valid_ipv4_literal($gateway_ip);
-        $is_valid = 0 if ($ipfamily eq 'IPv4' && $gateway_ip eq '0.0.0.0');
-        if (!$is_valid) {
-            add_warning('gateway-host', 'Skipping gateway host candidate with invalid GatewayIP for SFOS import', {
-                name => $name,
-                gateway_ip => $gateway_ip,
-                ipfamily => $ipfamily,
-            });
-            next;
-        }
-        push @valid_gateway_candidates, {
-            ipfamily => $ipfamily,
-            gateway_ip => $gateway_ip,
-        };
-    }
+    my @valid_gateway_candidates = @{ validate_gateway_candidates_for_sfos(
+        name => $name,
+        warning_category => 'gateway-host',
+        invalid_message => 'Skipping gateway host candidate with invalid GatewayIP for SFOS import',
+        candidates => \@gateway_candidates,
+    ) };
     return [] if !@valid_gateway_candidates;
 
     my @records;
     my %seen;
+    my $valid_gateway_candidate_count = scalar(@valid_gateway_candidates);
     for my $candidate (@valid_gateway_candidates) {
         my $ipfamily = $candidate->{ipfamily};
         my $gateway_ip = $candidate->{gateway_ip};
@@ -2745,10 +3464,7 @@ sub parse_one_gatewayhost {
             };
         }
 
-        my $gateway_name = $name;
-        if ($ipfamily eq 'IPv6' && scalar(@valid_gateway_candidates) > 1) {
-            $gateway_name = escape_trunc($name . ' IPv6');
-        }
+        my $gateway_name = escape_trunc(policy_route_name_for_family($name, $ipfamily, $valid_gateway_candidate_count));
 
         push @records, {
             name => $gateway_name,
@@ -2765,6 +3481,155 @@ sub parse_one_gatewayhost {
     return [] if !@records;
     return $records[0] if @records == 1;
     return \@records;
+}
+
+sub parse_sdwan_policy_routes {
+    my ($backup) = @_;
+    my @route_objects = @{ collect_ordered_route_policy_objects($backup) };
+    my @rows;
+    my %seen_route_gateway;
+
+    for my $obj (@route_objects) {
+        next if !$obj || ref($obj) ne 'HASH';
+        my $name = $obj->{data}->{name} // $obj->{ref} // '';
+        next if $name eq '';
+
+        my $gateway_context = derive_route_policy_gateway_context($backup, $obj);
+        my $route_type = $gateway_context->{route_type} // '';
+        my $is_itf_route = ($route_type eq 'itf');
+        if ($route_type ne 'itf' && $route_type ne 'host') {
+            add_warning('sdwan-policy-route', 'Skipping route/policy object with unsupported route type for SD-WAN policy export', {
+                name => $name,
+                route_type => $route_type,
+                ref => $obj->{ref} // '',
+            });
+            increment_stat('sdwan.policy_route.skipped.unsupported_type');
+            next;
+        }
+
+        if ($is_itf_route && ($gateway_context->{primary_missing} // 0)) {
+            add_warning('sdwan-policy-route', 'Skipping SD-WAN policy route because interface target did not resolve to primary gateway defaults', {
+                name => $name,
+                target => $gateway_context->{target_ref} // '',
+            });
+            increment_stat('sdwan.policy_route.skipped.primary_missing');
+            next;
+        }
+
+        if ($is_itf_route && ($gateway_context->{fallback_gateway_used} // 0)) {
+            add_warning('sdwan-policy-route', 'Policy-route target primary gateway was not SFOS-valid; using fallback primary gateway defaults', {
+                name => $name,
+                target_interface => $gateway_context->{target_name} // '',
+                target => $gateway_context->{target_ref} // '',
+                fallback_primary => $gateway_context->{fallback_primary_name} // '',
+                fallback_primary_ref => $gateway_context->{fallback_primary_ref} // '',
+            });
+            increment_stat('sdwan.policy_route.gateway.defaulted');
+        }
+
+        my @valid_gateway_candidates = @{ validate_gateway_candidates_for_sfos(
+            name => $name,
+            warning_category => 'sdwan-policy-route',
+            invalid_message => 'Skipping SD-WAN policy-route gateway candidate with invalid GatewayIP for SFOS import',
+            candidates => $gateway_context->{gateway_candidates},
+        ) };
+        next if !@valid_gateway_candidates;
+
+        my @source_rows = map { { name => $_ } } @{ ref_to_network_names($backup, $obj->{data}->{source}) };
+        my @destination_rows = map { { name => $_ } } @{ ref_to_network_names($backup, $obj->{data}->{destination}) };
+        my $service_name = ref_to_service_name($backup, $obj->{data}->{service});
+        my @service_rows = $service_name ne '' ? ({ name => $service_name }) : ();
+
+        my $match_interface = resolve_policy_route_match_interface($backup, $obj);
+        my $match_interface_state = $match_interface->{state} // '';
+        if ($match_interface_state eq 'mapped') {
+            add_warning('sdwan-policy-route', 'Mapped policy-route selector interface to SFOS-compatible placeholder', {
+                name => $name,
+                source_interface => $match_interface->{source_interface} // '',
+                mapped_interface => $match_interface->{interface} // '',
+                interface_ref => $match_interface->{interface_ref} // '',
+            });
+            increment_stat('sdwan.policy_route.interface.mapped');
+        } elsif ($match_interface_state eq 'defaulted') {
+            add_warning('sdwan-policy-route', 'Policy-route selector interface name is not SFOS-compatible; using interface default override (-I)', {
+                name => $name,
+                source_interface => $match_interface->{source_interface} // '',
+                fallback_interface => $match_interface->{interface} // '',
+                interface_ref => $match_interface->{interface_ref} // '',
+            });
+            increment_stat('sdwan.policy_route.interface.defaulted');
+        } elsif ($match_interface_state eq 'unmapped') {
+            add_warning('sdwan-policy-route', 'Dropped policy-route selector interface because name is not SFOS-compatible', {
+                name => $name,
+                source_interface => $match_interface->{source_interface} // '',
+                interface_ref => $match_interface->{interface_ref} // '',
+            });
+            increment_stat('sdwan.policy_route.interface.unmapped');
+        } elsif ($match_interface_state eq 'missing') {
+            add_warning('sdwan-policy-route', 'Dropped policy-route selector interface because interface reference did not resolve', {
+                name => $name,
+                interface_ref => $match_interface->{interface_ref} // '',
+            });
+            increment_stat('sdwan.policy_route.interface.missing');
+        }
+
+        my $gateway_base_name = $name;
+        if ($is_itf_route && ($gateway_context->{primary_name} // '') ne '') {
+            $gateway_base_name = $gateway_context->{primary_name};
+        }
+
+        my %seen_candidate;
+        my $valid_gateway_candidate_count = scalar(@valid_gateway_candidates);
+        my $selector_interface = $match_interface->{interface} // '';
+        for my $candidate (@valid_gateway_candidates) {
+            my $ipfamily = $candidate->{ipfamily} // 'IPv4';
+            my $gateway_ip = $candidate->{gateway_ip} // '';
+            next if $seen_candidate{$ipfamily . "\x1e" . $gateway_ip}++;
+
+            my $route_name = policy_route_name_for_family($name, $ipfamily, $valid_gateway_candidate_count);
+            my $gateway_name = policy_route_name_for_family($gateway_base_name, $ipfamily, $valid_gateway_candidate_count);
+            next if $seen_route_gateway{$route_name . "\x1e" . $gateway_name}++;
+
+            my $sources = filter_policy_route_network_rows_by_family(
+                rows => \@source_rows,
+                ipfamily => $ipfamily,
+                route_name => $route_name,
+            );
+            my $destinations = filter_policy_route_network_rows_by_family(
+                rows => \@destination_rows,
+                ipfamily => $ipfamily,
+                route_name => $route_name,
+            );
+
+            if ($selector_interface eq '' && !@$sources && !@$destinations && !@service_rows) {
+                add_warning('sdwan-policy-route', 'Skipping SD-WAN policy route because no SFOS-valid match criteria remain after normalization', {
+                    name => $route_name,
+                    ipfamily => $ipfamily,
+                });
+                increment_stat('sdwan.policy_route.skipped.empty_selector');
+                next;
+            }
+
+            push @rows, {
+                name => escape_trunc($route_name),
+                description => escape_html($obj->{data}->{comment} // ''),
+                ipfamily => $ipfamily,
+                interface => $selector_interface,
+                has_interface => ($selector_interface ne '' ? 1 : 0),
+                dscp_marking => '0-Best Effort',
+                gateway => escape_trunc($gateway_name),
+                link_selection => 'SelectGateways',
+                healthcheck => 'OFF',
+                status => ($obj->{data}->{status} ? '1' : '0'),
+                sources => $sources,
+                destinations => $destinations,
+                services => \@service_rows,
+            };
+            increment_stat('sdwan.policy_route.emitted');
+        }
+    }
+
+    return \@rows;
 }
 
 sub parse_one_service {
@@ -5713,12 +6578,6 @@ sub parse_backup {
                     $extra{$template_name}->{"$index/$filename"} = $content;
                 }
             }
-        } else {
-            if ($key eq 'network/multicast' && !$UNSUPPORTED_CLASS_TYPE_WARNED{$key}++) {
-                add_warning('host-mapping', 'Skipping unsupported UTM class/type mapping; no SFOS migration target is implemented', {
-                    class_type => $key,
-                });
-            }
         }
     }
 
@@ -5810,6 +6669,7 @@ sub enforce_contract_guardrails {
         'ATP.tmpl',
         'Time.tmpl',
         'DoSSettings.tmpl',
+        'PIMDynamicRouting.tmpl',
     );
     for my $template (@update_only_templates) {
         my $count = scalar @{ $entities->{$template} // [] };
