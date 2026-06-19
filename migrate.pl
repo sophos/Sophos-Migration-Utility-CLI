@@ -19,7 +19,7 @@ use JSON;
 use Encode;
 use Socket qw(inet_aton inet_ntoa);
 
-our $VERSION = '1.1';
+our $VERSION = '1.2';
 # Sophos Migration Utility - CLI
 # Compatible with UTM 9.7xx to SFOS APIVersion 2105.1
 #
@@ -62,7 +62,7 @@ our $VERSION = '1.1';
 #   - ATP settings/exceptions
 #   - Time settings
 #   - NTP servers
-#   - DoS settings + bypass rules
+#   - DoS settings + bypass rules (opt-in via -E; disabled by default)
 #   - DHCP servers (IPv4/IPv6)
 #   - Web Filter exceptions
 #   - PIM-SM (main.pim_sm -> PIMDynamicRouting, static RP mode)
@@ -80,6 +80,7 @@ my $DEFAULT_INTERFACE_NAME = 'Port1';
 my $DEFAULT_DHCP_INTERFACE_NAME = 'Port1';
 my $LOG_FIREWALL = 0;
 my $MIGRATE_FIREWALL_RULES = 1;
+my $MIGRATE_DOS = 0;
 our $NAT_STRATEGY = 'compat';
 our $CONTRACT_BASELINE = '2105.1';
 our $MIGRATION_REPORT_FILE = '';
@@ -463,6 +464,7 @@ sub usage {
     say STDERR "\t-h\t- Display this help / usage message.";
     say STDERR "\t-l\t- Optional flag to force Enable firewall-rule log settings\n\t\t  Default: follow source rule log setting";
     say STDERR "\t-F\t- Optional flag to disable migration of firewall rules\n\t\t  Default: off";
+    say STDERR "\t-E\t- Optional flag to enable DoS (flood protection) export (DoSSettings + DoSBypassRules)\n\t\t  Default: off (UTM DoS settings differ from SFOS and can break SFOS import)";
     say STDERR "\t-I\t- Optional fallback interface name for static interface routes (e.g., Port1)\n\t\t  Default: Port1";
     say STDERR "\t\t  If not specified, interface routes use the default interface.";
     say STDERR "\t-N\t- NAT strategy mode: safe|compat\n\t\t  Default: compat";
@@ -5485,6 +5487,7 @@ sub dos_flood_apply_flags {
 
 sub parse_dos_settings {
     my ($backup) = @_;
+    return [] if !$MIGRATE_DOS;
     my $main = $backup->{main};
     return [] if ref($main) ne 'HASH';
 
@@ -5642,6 +5645,7 @@ sub dos_bypass_literals_from_refs {
 
 sub parse_dos_bypass_rule {
     my ($backup, $obj) = @_;
+    return [] if !$MIGRATE_DOS;
     my $data = $obj->{data};
     return [] if !defined $data;
     my @skiplist = @{ensure_arrayref($data->{skiplist})};
@@ -6724,7 +6728,7 @@ sub parse_command_line_args {
     my @raw_argv = @ARGV;
     my $debug_level = parse_debug_level_from_argv(\@raw_argv);
 
-    getopts('Flhdi:o:p:D:s:N:R:I:', \%opt);
+    getopts('EFlhdi:o:p:D:s:N:R:I:', \%opt);
     usage() if $opt{h};
     usage() if (defined $opt{i} && ($opt{i} eq '' || ! -f $opt{i}));
     usage() if (defined $opt{o} && $opt{o} eq '');
@@ -6741,6 +6745,7 @@ sub parse_command_line_args {
     $DEBUG = 1 if $opt{d} && $DEBUG < 1;
     $LOG_FIREWALL = 1 if (defined $opt{l});
     $MIGRATE_FIREWALL_RULES = 0 if (defined $opt{F});
+    $MIGRATE_DOS = 1 if (defined $opt{E});
     $NAT_STRATEGY = $opt{N} if (defined $opt{N});
 
     $MIGRATION_REPORT_FILE = $opt{R} if (defined $opt{R});

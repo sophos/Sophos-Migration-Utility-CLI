@@ -18,6 +18,7 @@ USAGE: ./migrate.pl [-i path/to/snapshot] [-o path/to/Export.tar] [args]
 - -h - Display this help / usage message.
 - -l - Optional flag to force-enable firewall-rule logging (`logtraffic=Enable`) for migrated rules. Default: follow source rule log setting.
 - -F - Optional flag to disable migration of firewall rules. Default: off
+- -E - Optional flag to enable DoS (flood protection) export (`DoSSettings` + `DoSBypassRules`). Default: off. UTM DoS settings differ from SFOS and can break SFOS import, so DoS export is opt-in.
 - -I - Optional fallback interface name for static interface routes (e.g., `Port1`). Default: `Port1`. If not specified, interface routes use the default interface.
 - -N - Optional NAT strategy mode (`safe` or `compat`). Default: `compat`
 - -R - Optional path for migration report JSON. Default: `<output>.report.json`
@@ -187,7 +188,7 @@ It is not feasible to reimplement all the SFOS validation rules, so this tool wi
    - ATP global settings, including host/network exceptions with interface-primary (`itfparams/primary`) fallback via `primary_address`, interface-network (`network/interface_network`) fallback via linked `interface_address`/primary references, unresolved-host-reference warnings, and best-effort threat exception normalization/filtering for SFOS-compatible import values
    - Time settings (`Time`) and status-gated NTP access policy bundle (`NTPServer`)
    - Web filter exceptions (`http/exception` -> `WebFilterException`) with skip-check projection for HTTPS decrypt/certificate validation, malware scan, zero-day protection, and policy checks; URL regex normalization preserves a leading `^` anchor while stripping `http(s)://` prefixes
-   - Flood protection mapping (`flood_protection`) plus flood exclusions (`ips/exception` skiplist `tcp_flood|udp_flood|icmp_flood`) -> `DoSSettings` and `DoSBypassRules` (source/destination emitted as SFOS IPv4 literals or CIDR; PSD intentionally excluded)
+   - Flood protection mapping (`flood_protection`) plus flood exclusions (`ips/exception` skiplist `tcp_flood|udp_flood|icmp_flood`) -> `DoSSettings` and `DoSBypassRules` (source/destination emitted as SFOS IPv4 literals or CIDR; PSD intentionally excluded). Opt-in via `-E`; disabled by default because UTM DoS settings differ from SFOS and can break SFOS import.
    - NAT rules with optional firewall-for-NAT generation (`-N compat`), including Masquerading and Server Load Balancing, outbound interface projection, and explicit NATMethod/HealthCheck emission
    - DHCP static leases attached to DHCP server payload (IPv4 and IPv6), with UTM-aligned non-relay vs relay subnet derivation, `lease_time` seconds->minutes alignment, relay-mode to `LeaseForRelay` mapping, optional WINS/boot/DHCP option transfer where safely mappable, interface normalization fallback via `-D`, hostname normalization + collision-safe de-collision for SFOS `dhcpHostname` compatibility, and migrated DHCPv4 servers emitted disabled (`Status=0`) for import safety
 
