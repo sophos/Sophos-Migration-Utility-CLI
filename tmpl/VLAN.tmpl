@@ -1,0 +1,25 @@
+<TMPL_IF NAME="enabled">
+<VLAN transactionid="">
+    <Zone><TMPL_VAR NAME="zone"></Zone>
+    <Interface><TMPL_VAR NAME="parent_interface"></Interface>
+    <Hardware><TMPL_VAR NAME="hardware"></Hardware>
+    <Name><TMPL_VAR NAME="name"></Name>
+    <InterfaceStatus><TMPL_VAR NAME="status"></InterfaceStatus>
+    <VLANID><TMPL_VAR NAME="vlan_id"></VLANID>
+    <IPv4Configuration><TMPL_VAR NAME="ipv4_configuration"></IPv4Configuration>
+    <TMPL_IF NAME="ipv4_assignment">
+    <IPv4Assignment><TMPL_VAR NAME="ipv4_assignment"></IPv4Assignment>
+    </TMPL_IF>
+    <TMPL_IF NAME="ip_address">
+    <IPAddress><TMPL_VAR NAME="ip_address"></IPAddress>
+    </TMPL_IF>
+    <TMPL_IF NAME="netmask">
+    <Netmask><TMPL_VAR NAME="netmask"></Netmask>
+    </TMPL_IF>
+    <IPv6Configuration><TMPL_VAR NAME="ipv6_configuration"></IPv6Configuration>
+    <IPv6Assignment>Static</IPv6Assignment>
+    <!-- Status maps to SFOS's report-only "portstatus" column, not the
+         admin enable/disable toggle (that's InterfaceStatus above). -->
+    <Status>Disabled</Status>
+</VLAN>
+</TMPL_IF>

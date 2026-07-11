@@ -1,0 +1,34 @@
+<TMPL_IF NAME="enabled">
+<Interface transactionid="">
+    <Hardware><TMPL_VAR NAME="hardware"></Hardware>
+    <Name><TMPL_VAR NAME="name"></Name>
+    <InterfaceStatus><TMPL_VAR NAME="status"></InterfaceStatus>
+    <NetworkZone><TMPL_VAR NAME="zone"></NetworkZone>
+    <IPv4Configuration><TMPL_VAR NAME="ipv4_configuration"></IPv4Configuration>
+    <TMPL_IF NAME="ipv4_assignment">
+    <IPv4Assignment><TMPL_VAR NAME="ipv4_assignment"></IPv4Assignment>
+    </TMPL_IF>
+    <TMPL_IF NAME="ip_address">
+    <IPAddress><TMPL_VAR NAME="ip_address"></IPAddress>
+    </TMPL_IF>
+    <TMPL_IF NAME="netmask">
+    <Netmask><TMPL_VAR NAME="netmask"></Netmask>
+    </TMPL_IF>
+    <IPv6Configuration><TMPL_VAR NAME="ipv6_configuration"></IPv6Configuration>
+    <IPv6Assignment>Static</IPv6Assignment>
+    <InterfaceSpeed>Auto Negotiate</InterfaceSpeed>
+    <AutoNegotiation>Enable</AutoNegotiation>
+    <FEC>Off</FEC>
+    <BreakoutMembers>0</BreakoutMembers>
+    <BreakoutSource></BreakoutSource>
+    <MTU>1500</MTU>
+    <MSS>
+        <OverrideMSS>Disable</OverrideMSS>
+        <MSSValue>1460</MSSValue>
+    </MSS>
+    <!-- Status maps to SFOS's report-only "portstatus" column, not the
+         admin enable/disable toggle (that's InterfaceStatus above). -->
+    <Status>Disabled</Status>
+    <MACAddress><TMPL_VAR NAME="mac_address"></MACAddress>
+</Interface>
+</TMPL_IF>

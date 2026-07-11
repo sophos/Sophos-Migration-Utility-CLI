@@ -19,7 +19,7 @@ use JSON;
 use Encode;
 use Socket qw(inet_aton inet_ntoa);
 
-our $VERSION = '1.2';
+our $VERSION = '1.3';
 # Sophos Migration Utility - CLI
 # Compatible with UTM 9.7xx to SFOS APIVersion 2105.1
 #
@@ -66,10 +66,10 @@ our $VERSION = '1.2';
 #   - DHCP servers (IPv4/IPv6)
 #   - Web Filter exceptions
 #   - PIM-SM (main.pim_sm -> PIMDynamicRouting, static RP mode)
+#   - Physical interfaces, VLANs, and aliases/additional addresses (opt-in via -A)
 #
 ## Unsupported exports to be considered
 #   - Routes (beyond static routes and policy routes)
-#   - VLANs
 #   - Firewall Rules - Groups
 
 my $DEBUG = 0;
@@ -81,6 +81,7 @@ my $DEFAULT_DHCP_INTERFACE_NAME = 'Port1';
 my $LOG_FIREWALL = 0;
 my $MIGRATE_FIREWALL_RULES = 1;
 my $MIGRATE_DOS = 0;
+our $MIGRATE_INTERFACE_VLAN = 0;
 our $NAT_STRATEGY = 'compat';
 our $CONTRACT_BASELINE = '2105.1';
 our $MIGRATION_REPORT_FILE = '';
@@ -102,6 +103,9 @@ use Digest::MD5 qw(md5_hex);
 our %TEMPLATE_METADATA = (
     'Header.tmpl' => { },
     'Footer.tmpl' => { },
+    'Interface.tmpl' => { handler => \&parse_one_interface, class_types => ['interface/ethernet'] },
+    'VLAN.tmpl' => { handler => \&parse_one_vlan, class_types => ['interface/vlan'] },
+    'Alias.tmpl' => { handler => \&parse_interface_aliases, class_types => [] },
     'GatewayHost.tmpl' => { handler => \&parse_one_gatewayhost, class_types => ['itfparams/primary', 'route/policy'] },
     'SDWANPolicyRoute.tmpl' => { handler => \&parse_sdwan_policy_routes, class_types => [] },
     'Host.tmpl' => { handler => \&parse_one_host, class_types => ['network/dns_host', 'network/host', 'network/network', 'network/interface_network', 'network/range', 'network/dns_group', 'network/availability_group', 'network/interface_address', 'network/interface_broadcast', 'mac_list/mac_list'] },
@@ -157,6 +161,9 @@ my %POST_HANDLERS = (
 
 our @ORDER = (
     'Header.tmpl',
+    'Interface.tmpl',
+    'VLAN.tmpl',
+    'Alias.tmpl',
     'Host.tmpl',
     'DNSHostEntry.tmpl',
     'GatewayHost.tmpl',
@@ -453,7 +460,7 @@ EOF
 
 sub usage {
     say STDERR "Sophos Migration Utility CLI for UTM to SFOS - Version $VERSION";
-    say STDERR "USAGE: $0 [-i path/to/snapshot] [-o path/to/Export.tar] [-d]";
+    say STDERR "USAGE: $0 [-i path/to/snapshot] [-o path/to/Export.tar] [-d] [-A]";
     say STDERR "\t-i\t- Path to a specific UTM snapshot to be exported.\n\t\t  Usually located in /var/confd/var/storage/snapshots/";
     say STDERR "\t\t  If -i is not specified, a snapshot of the current UTM configuration will be created and used.";
     say STDERR "\t-o\t- Optional export path for the SFOS compatible TAR file.\n\t\t  Default: ./Export.tar";
@@ -465,6 +472,7 @@ sub usage {
     say STDERR "\t-l\t- Optional flag to force Enable firewall-rule log settings\n\t\t  Default: follow source rule log setting";
     say STDERR "\t-F\t- Optional flag to disable migration of firewall rules\n\t\t  Default: off";
     say STDERR "\t-E\t- Optional flag to enable DoS (flood protection) export (DoSSettings + DoSBypassRules)\n\t\t  Default: off (UTM DoS settings differ from SFOS and can break SFOS import)";
+    say STDERR "\t-A\t- Optional flag to enable physical Interface, VLAN, and additional-address Alias export\n\t\t  Default: off";
     say STDERR "\t-I\t- Optional fallback interface name for static interface routes (e.g., Port1)\n\t\t  Default: Port1";
     say STDERR "\t\t  If not specified, interface routes use the default interface.";
     say STDERR "\t-N\t- NAT strategy mode: safe|compat\n\t\t  Default: compat";
@@ -2661,6 +2669,364 @@ sub map_utm_interface_object_to_sfos {
     }
 
     return '';
+}
+
+# Resolve the SFOS PortN name for a physical (ethernet) interface on the -A
+# export path. Unlike map_utm_interface_object_to_sfos, this prefers the linked
+# itfhw hardware (the authoritative NIC) over the operator-assigned interface
+# label, so an interface a user happened to name "eth0" or "Port1" still maps to
+# the port its hardware actually is. Falls back to the interface's own labels
+# only when the itfhw hardware yields no mapping.
+sub map_utm_physical_interface_to_sfos {
+    my ($backup, $obj) = @_;
+    return '' if ref($obj) ne 'HASH';
+    my $data = ref($obj->{data}) eq 'HASH' ? $obj->{data} : {};
+
+    my @candidates;
+    my $itfhw_ref = $data->{itfhw} // '';
+    if ($itfhw_ref ne '') {
+        my $itfhw_obj = get_ref($backup, $itfhw_ref);
+        if ($itfhw_obj && ref($itfhw_obj->{data}) eq 'HASH') {
+            push @candidates, $itfhw_obj->{data}->{hardware} // '';
+            push @candidates, $itfhw_obj->{data}->{name} // '';
+        }
+    }
+    push @candidates, $data->{name} // '';
+    push @candidates, $data->{hardware} // '';
+
+    my %seen;
+    for my $candidate (@candidates) {
+        next if !defined $candidate || $candidate eq '';
+        next if $seen{$candidate}++;
+        my $mapped = map_utm_interface_name_to_sfos($candidate);
+        return $mapped if $mapped ne '';
+    }
+
+    return '';
+}
+
+sub resolve_static_ipv4_netmask {
+    my ($address, $raw_netmask) = @_;
+    my $ipv4_address = ipv4_from_optional_prefix($address);
+    my $netmask = cidr_to_dotted_decimal($raw_netmask);
+    # A /0 netmask ("0.0.0.0") is never valid on an interface's own address,
+    # unlike a route destination where it legitimately means "any"; reject it
+    # the same as an unresolvable netmask.
+    return '' if !is_valid_ipv4_literal($ipv4_address) || $ipv4_address eq '0.0.0.0' || $netmask eq '' || $netmask eq '0.0.0.0';
+    return $netmask;
+}
+
+sub normalize_mac_address {
+    my ($mac) = @_;
+    return '' if !defined $mac;
+    $mac =~ s/^\s+|\s+$//g;
+    return '' if $mac !~ /^[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}$/;
+    $mac =~ tr/-/:/;
+    return '' if uc($mac) eq '00:00:00:00:00:00';
+    return uc($mac);
+}
+
+sub resolve_vlan_parent {
+    my ($backup, $data) = @_;
+    my $itfhw_obj = get_ref($backup, $data->{itfhw} // '');
+    my $parent = '';
+    if ($itfhw_obj && ref($itfhw_obj->{data}) eq 'HASH') {
+        $parent = map_utm_interface_name_to_sfos($itfhw_obj->{data}->{hardware} // $itfhw_obj->{data}->{name} // '');
+    }
+    return { ok => 0, reason => 'unmapped_parent' } if $parent eq '';
+
+    my $tag = $data->{vlantag} // '';
+    return { ok => 0, reason => 'invalid_tag', parent => $parent, tag => $tag } if $tag !~ /^\d+$/ || $tag < 1 || $tag > 4094;
+
+    return { ok => 1, parent => $parent, tag => $tag, name => "$parent.$tag" };
+}
+
+sub interface_primary_ipv4_context {
+    my ($backup, $primary_ref) = @_;
+    return { ok => 0, reason => 'missing' } if !defined $primary_ref || $primary_ref eq '' || $primary_ref eq '-1';
+
+    my $primary = get_ref($backup, $primary_ref);
+    return { ok => 0, reason => 'unresolved' } if !$primary || ref($primary->{data}) ne 'HASH';
+    return { ok => 0, reason => 'unsupported-primary-type', ref => $primary_ref } if ($primary->{class} // '') ne 'itfparams' || ($primary->{type} // '') ne 'primary';
+
+    my $data = $primary->{data};
+    my $address_type = $data->{type} // 'static';
+    if ($address_type eq 'dynamic') {
+        return {
+            ok => 1,
+            assignment => 'DHCP',
+            ref => $primary_ref,
+            address_type => $address_type,
+        };
+    }
+    if ($address_type ne 'static') {
+        return {
+            ok => 0,
+            reason => 'unsupported-address-type',
+            ref => $primary_ref,
+            address_type => $address_type,
+        };
+    }
+
+    my $address = $data->{address} // '';
+    my $netmask = resolve_static_ipv4_netmask($address, $data->{netmask});
+    if ($netmask eq '') {
+        return {
+            ok => 0,
+            reason => 'missing-static-ipv4',
+            ref => $primary_ref,
+            address => $address,
+            netmask => $data->{netmask} // '',
+        };
+    }
+
+    return {
+        ok => 1,
+        assignment => 'Static',
+        address => ipv4_from_optional_prefix($address),
+        netmask => $netmask,
+        ref => $primary_ref,
+    };
+}
+
+sub parse_one_interface {
+    my ($backup, $obj) = @_;
+    return [] if !$MIGRATE_INTERFACE_VLAN;
+    return [] if !$obj || ref($obj->{data}) ne 'HASH';
+
+    my $data = $obj->{data};
+    my $hardware = map_utm_physical_interface_to_sfos($backup, $obj);
+    if ($hardware eq '') {
+        add_warning('interface-vlan', 'Skipping physical interface because hardware cannot be mapped to SFOS PortN', {
+            interface => $data->{name} // $obj->{ref} // '',
+            itfhw => $data->{itfhw} // '',
+        });
+        increment_stat('interface.physical.skipped.unmapped');
+        return [];
+    }
+
+    my $ipv4 = interface_primary_ipv4_context($backup, $data->{primary_address});
+    if (!$ipv4->{ok}) {
+        add_warning('interface-vlan', 'Skipping physical interface because it has no transferable static IPv4 primary address', {
+            interface => $hardware,
+            source_interface => $data->{name} // $obj->{ref} // '',
+            primary_address => $data->{primary_address} // '',
+            reason => $ipv4->{reason} // '',
+        });
+        increment_stat('interface.physical.skipped.no_static_ipv4');
+        return [];
+    }
+
+    my $itfhw_obj = get_ref($backup, $data->{itfhw} // '');
+    my $itfhw_data = ($itfhw_obj && ref($itfhw_obj->{data}) eq 'HASH') ? $itfhw_obj->{data} : {};
+    my $mac = normalize_mac_address($itfhw_data->{mac});
+    increment_stat($mac ne '' ? 'interface.physical.mac_from_source' : 'interface.physical.mac_default');
+
+    increment_stat('interface.physical.emitted');
+    my $row = {
+        enabled => 1,
+        hardware => escape_html($hardware),
+        name => escape_html($hardware),
+        # Interfaces are always imported administratively disabled so the
+        # operator reviews and enables each one after migration; see -A docs.
+        status => 'OFF',
+        zone => 'LAN',
+        ipv4_configuration => 'Enable',
+        ipv4_assignment => $ipv4->{assignment},
+        ipv6_configuration => 'Disable',
+        mac_address => $mac ne '' ? escape_html($mac) : 'Default',
+    };
+    if ($ipv4->{assignment} eq 'Static') {
+        $row->{ip_address} = $ipv4->{address};
+        $row->{netmask} = $ipv4->{netmask};
+    }
+    return [$row];
+}
+
+sub parse_one_vlan {
+    my ($backup, $obj) = @_;
+    return [] if !$MIGRATE_INTERFACE_VLAN;
+    return [] if !$obj || ref($obj->{data}) ne 'HASH';
+
+    my $data = $obj->{data};
+    my $resolved = resolve_vlan_parent($backup, $data);
+    if (!$resolved->{ok}) {
+        if ($resolved->{reason} eq 'unmapped_parent') {
+            add_warning('interface-vlan', 'Skipping VLAN because parent hardware cannot be mapped to SFOS PortN', {
+                vlan => $data->{name} // $obj->{ref} // '',
+                itfhw => $data->{itfhw} // '',
+                vlantag => $data->{vlantag} // '',
+            });
+            increment_stat('interface.vlan.skipped.unmapped_parent');
+        } else {
+            add_warning('interface-vlan', 'Skipping VLAN because VLAN ID is outside the SFOS-supported range', {
+                vlan => $data->{name} // $obj->{ref} // '',
+                parent => $resolved->{parent},
+                vlantag => $resolved->{tag},
+            });
+            increment_stat('interface.vlan.skipped.invalid_tag');
+        }
+        return [];
+    }
+
+    my $parent = $resolved->{parent};
+    my $tag = $resolved->{tag};
+    my $name = $resolved->{name};
+    my $ipv4 = interface_primary_ipv4_context($backup, $data->{primary_address});
+    my $row = {
+        enabled => 1,
+        hardware => escape_html($name),
+        parent_interface => escape_html($parent),
+        vlan_id => $tag,
+        name => escape_html($name),
+        # See parse_one_interface: VLANs are always imported disabled too.
+        status => 'OFF',
+        zone => 'LAN',
+        ipv6_configuration => 'Disable',
+    };
+
+    if ($ipv4->{ok}) {
+        $row->{ipv4_configuration} = 'Enable';
+        $row->{ipv4_assignment} = $ipv4->{assignment};
+        if ($ipv4->{assignment} eq 'Static') {
+            $row->{ip_address} = $ipv4->{address};
+            $row->{netmask} = $ipv4->{netmask};
+            increment_stat('interface.vlan.emitted.static_ipv4');
+        } else {
+            increment_stat('interface.vlan.emitted.dhcp_ipv4');
+        }
+    } else {
+        $row->{ipv4_configuration} = 'Disable';
+        add_warning('interface-vlan', 'Exporting VLAN without IPv4 because no transferable static IPv4 primary address was found', {
+            vlan => $name,
+            primary_address => $data->{primary_address} // '',
+            reason => $ipv4->{reason} // '',
+        });
+        increment_stat('interface.vlan.emitted.no_ipv4');
+    }
+
+    return [$row];
+}
+
+sub interface_alias_rows_for_additional_addresses {
+    my ($backup, $obj, $parent_interface, $source_label) = @_;
+    return [] if !$obj || ref($obj->{data}) ne 'HASH';
+    my @refs = @{ ensure_arrayref($obj->{data}->{additional_addresses}) };
+    return [] if !@refs;
+
+    my @rows;
+    my $sequence = 0;
+    for my $ref (@refs) {
+        my $secondary = get_ref($backup, $ref);
+        my $secondary_data = $secondary && ref($secondary->{data}) eq 'HASH' ? $secondary->{data} : undef;
+        if (!$secondary_data || ($secondary->{class} // '') ne 'itfparams' || ($secondary->{type} // '') ne 'secondary') {
+            add_warning('interface-vlan', 'Skipping additional interface address because it is not a transferable enabled IPv4 secondary address', {
+                interface => $parent_interface,
+                source_interface => $source_label,
+                additional_address => $ref // '',
+                reason => 'unresolved-or-not-secondary',
+            });
+            increment_stat('interface.alias.skipped.invalid');
+            next;
+        }
+
+        if (exists $secondary_data->{status} && !is_true($secondary_data->{status})) {
+            add_warning('interface-vlan', 'Skipping additional interface address because it is disabled', {
+                interface => $parent_interface,
+                source_interface => $source_label,
+                additional_address => $ref // '',
+            });
+            increment_stat('interface.alias.skipped.disabled');
+            next;
+        }
+
+        my $address = $secondary_data->{address} // '';
+        my $netmask = resolve_static_ipv4_netmask($address, $secondary_data->{netmask});
+        if ($netmask eq '') {
+            add_warning('interface-vlan', 'Skipping additional interface address because it is not a transferable enabled IPv4 secondary address', {
+                interface => $parent_interface,
+                source_interface => $source_label,
+                additional_address => $ref // '',
+                reason => 'missing-static-ipv4',
+                address => $address,
+                netmask => $secondary_data->{netmask} // '',
+            });
+            increment_stat('interface.alias.skipped.invalid');
+            next;
+        }
+
+        push @rows, {
+            enabled => 1,
+            interface => escape_html($parent_interface),
+            name => escape_html($parent_interface . ':' . $sequence),
+            ip_family => 'IPv4',
+            ip_address => ipv4_from_optional_prefix($address),
+            netmask => $netmask,
+        };
+        $sequence++;
+        increment_stat('interface.alias.emitted');
+    }
+
+    return \@rows;
+}
+
+sub parse_interface_aliases {
+    my ($backup) = @_;
+    return [] if !$MIGRATE_INTERFACE_VLAN;
+
+    my @rows;
+    for my $name (sort keys %{ $backup->{objects} // {} }) {
+        my $obj = $backup->{objects}{$name};
+        next if !$obj || ref($obj->{data}) ne 'HASH';
+        my $class = $obj->{class} // '';
+        my $type = $obj->{type} // '';
+        next if $class ne 'interface' || ($type ne 'ethernet' && $type ne 'vlan');
+
+        my $parent = '';
+        if ($type eq 'ethernet') {
+            $parent = map_utm_physical_interface_to_sfos($backup, $obj);
+        } else {
+            my $resolved = resolve_vlan_parent($backup, $obj->{data});
+            $parent = $resolved->{name} if $resolved->{ok};
+        }
+        if ($parent eq '') {
+            if (@{ ensure_arrayref($obj->{data}->{additional_addresses}) }) {
+                add_warning('interface-vlan', 'Skipping additional interface addresses because parent interface cannot be mapped to SFOS', {
+                    source_interface => $obj->{data}->{name} // $obj->{ref} // '',
+                    itfhw => $obj->{data}->{itfhw} // '',
+                });
+                increment_stat('interface.alias.skipped.unmapped_parent');
+            }
+            next;
+        }
+
+        # A physical interface with no transferable primary IPv4 is not emitted
+        # as an Interface entity (see parse_one_interface); emitting its aliases
+        # anyway would orphan them on a parent interface that never appears in the
+        # export. VLANs are always emitted once their parent+tag resolve, so this
+        # only applies to ethernet.
+        if ($type eq 'ethernet'
+            && !interface_primary_ipv4_context($backup, $obj->{data}->{primary_address})->{ok}) {
+            if (@{ ensure_arrayref($obj->{data}->{additional_addresses}) }) {
+                add_warning('interface-vlan', 'Skipping additional interface addresses because the parent physical interface has no transferable static IPv4 primary address', {
+                    interface => $parent,
+                    source_interface => $obj->{data}->{name} // $obj->{ref} // '',
+                    primary_address => $obj->{data}->{primary_address} // '',
+                });
+                increment_stat('interface.alias.skipped.unexported_parent');
+            }
+            next;
+        }
+
+        push @rows, @{ interface_alias_rows_for_additional_addresses(
+            $backup,
+            $obj,
+            $parent,
+            $obj->{data}->{name} // $obj->{ref} // '',
+        ) };
+    }
+
+    return \@rows;
 }
 
 sub is_valid_sfos_pim_rp_ip {
@@ -6728,7 +7094,7 @@ sub parse_command_line_args {
     my @raw_argv = @ARGV;
     my $debug_level = parse_debug_level_from_argv(\@raw_argv);
 
-    getopts('EFlhdi:o:p:D:s:N:R:I:', \%opt);
+    getopts('AEFlhdi:o:p:D:s:N:R:I:', \%opt);
     usage() if $opt{h};
     usage() if (defined $opt{i} && ($opt{i} eq '' || ! -f $opt{i}));
     usage() if (defined $opt{o} && $opt{o} eq '');
@@ -6746,6 +7112,7 @@ sub parse_command_line_args {
     $LOG_FIREWALL = 1 if (defined $opt{l});
     $MIGRATE_FIREWALL_RULES = 0 if (defined $opt{F});
     $MIGRATE_DOS = 1 if (defined $opt{E});
+    $MIGRATE_INTERFACE_VLAN = 1 if (defined $opt{A});
     $NAT_STRATEGY = $opt{N} if (defined $opt{N});
 
     $MIGRATION_REPORT_FILE = $opt{R} if (defined $opt{R});
