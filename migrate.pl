@@ -19,7 +19,7 @@ use JSON;
 use Encode;
 use Socket qw(inet_aton inet_ntoa);
 
-our $VERSION = '1.3';
+our $VERSION = '1.4';
 # Sophos Migration Utility - CLI
 # Compatible with UTM 9.7xx to SFOS APIVersion 2105.1
 #
@@ -2789,6 +2789,48 @@ sub interface_primary_ipv4_context {
     };
 }
 
+# Per-export registry of SFOS interface <Name> values already emitted, used only
+# to warn about collisions. Reset alongside the migration report at run start.
+our %INTERFACE_NAME_SEEN = ();
+
+# SFOS tblinterface.name is a varchar(60) column with a UNIQUE constraint.
+use constant SFOS_INTERFACE_NAME_MAXLEN => 60;
+
+# Resolve the SFOS interface <Name>. SFOS stores <Name> (DB column `name`)
+# separately from <Hardware> (DB column `interface`); cross-entity references
+# (VLAN parent, Alias, zones, routes) resolve against <Hardware>, so we are free
+# to preserve the operator-facing UTM interface label in <Name> without breaking
+# any reference. Falls back to the structural hardware/parent.tag name only when
+# the UTM label is empty. Per the -A "warn, don't rewrite" contract, over-long
+# and colliding names are emitted verbatim with a warning so the operator can fix
+# them in Config Studio rather than SMU silently mangling them.
+sub sfos_interface_display_name {
+    my (%args) = @_;
+    my $kind    = $args{kind} // 'physical';    # 'physical' | 'vlan'
+    my $fallback = $args{fallback};
+    my $context  = ref($args{context}) eq 'HASH' ? $args{context} : {};
+
+    my $name = defined $args{utm_name} ? $args{utm_name} : '';
+    $name =~ s/^\s+|\s+$//g;
+
+    if ($name eq '') {
+        add_warning('interface-vlan', 'Interface has no UTM name; falling back to the SFOS hardware name', { %$context, fallback => $fallback });
+        increment_stat("interface.$kind.name.fallback_empty");
+        $name = $fallback;
+    }
+    elsif (length($name) > SFOS_INTERFACE_NAME_MAXLEN) {
+        add_warning('interface-vlan', 'Interface name exceeds the SFOS 60-character limit and may fail import; verify in Config Studio', { %$context, name => $name, length => length($name) });
+        increment_stat("interface.$kind.name.too_long");
+    }
+
+    if ($INTERFACE_NAME_SEEN{$name}++) {
+        add_warning('interface-vlan', 'Interface name is not unique and will collide with the SFOS UNIQUE name constraint; verify in Config Studio', { %$context, name => $name });
+        increment_stat("interface.$kind.name.duplicate");
+    }
+
+    return $name;
+}
+
 sub parse_one_interface {
     my ($backup, $obj) = @_;
     return [] if !$MIGRATE_INTERFACE_VLAN;
@@ -2822,11 +2864,18 @@ sub parse_one_interface {
     my $mac = normalize_mac_address($itfhw_data->{mac});
     increment_stat($mac ne '' ? 'interface.physical.mac_from_source' : 'interface.physical.mac_default');
 
+    my $display_name = sfos_interface_display_name(
+        utm_name => $data->{name},
+        fallback => $hardware,
+        kind     => 'physical',
+        context  => { hardware => $hardware, source_interface => $data->{name} // $obj->{ref} // '' },
+    );
+
     increment_stat('interface.physical.emitted');
     my $row = {
         enabled => 1,
         hardware => escape_html($hardware),
-        name => escape_html($hardware),
+        name => escape_html($display_name),
         # Interfaces are always imported administratively disabled so the
         # operator reviews and enables each one after migration; see -A docs.
         status => 'OFF',
@@ -2872,13 +2921,19 @@ sub parse_one_vlan {
     my $parent = $resolved->{parent};
     my $tag = $resolved->{tag};
     my $name = $resolved->{name};
+    my $display_name = sfos_interface_display_name(
+        utm_name => $data->{name},
+        fallback => $name,
+        kind     => 'vlan',
+        context  => { hardware => $name, parent => $parent, source_vlan => $data->{name} // $obj->{ref} // '' },
+    );
     my $ipv4 = interface_primary_ipv4_context($backup, $data->{primary_address});
     my $row = {
         enabled => 1,
         hardware => escape_html($name),
         parent_interface => escape_html($parent),
         vlan_id => $tag,
-        name => escape_html($name),
+        name => escape_html($display_name),
         # See parse_one_interface: VLANs are always imported disabled too.
         status => 'OFF',
         zone => 'LAN',
